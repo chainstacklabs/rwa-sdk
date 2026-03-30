@@ -1,0 +1,3 @@
+[
+  {"inputs": [{"name": "kycRequirementGroup", "type": "uint256"}, {"name": "addr", "type": "address"}], "name": "getKYCStatus", "outputs": [{"type": "bool"}], "stateMutability": "view", "type": "function"}
+]

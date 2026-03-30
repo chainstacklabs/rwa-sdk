@@ -1,0 +1,6 @@
+[
+  {"inputs": [{"name": "from", "type": "address"}, {"name": "to", "type": "address"}, {"name": "value", "type": "uint256"}], "name": "detectTransferRestriction", "outputs": [{"type": "uint8"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [{"name": "code", "type": "uint8"}], "name": "messageForTransferRestriction", "outputs": [{"type": "string"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [{"name": "from", "type": "address"}, {"name": "to", "type": "address"}, {"name": "value", "type": "uint256"}], "name": "checkTransferRestriction", "outputs": [{"type": "bool"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [], "name": "hook", "outputs": [{"type": "address"}], "stateMutability": "view", "type": "function"}
+]

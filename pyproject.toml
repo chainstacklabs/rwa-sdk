@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rwa-sdk"
+version = "0.1.0"
+description = "Read-only Python SDK for querying Real World Asset tokens across EVM chains"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Chainstack Labs" }]
+keywords = ["rwa", "defi", "ethereum", "web3", "tokenization"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "web3>=7.0,<8",
+    "pydantic>=2.0,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/chainstacklabs/rwa-sdk"
+Repository = "https://github.com/chainstacklabs/rwa-sdk"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rwa_sdk"]

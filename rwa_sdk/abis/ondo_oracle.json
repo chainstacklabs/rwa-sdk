@@ -1,0 +1,4 @@
+[
+  {"inputs": [], "name": "getPrice", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [], "name": "getPriceData", "outputs": [{"name": "price", "type": "uint256"}, {"name": "timestamp", "type": "uint256"}], "stateMutability": "view", "type": "function"}
+]

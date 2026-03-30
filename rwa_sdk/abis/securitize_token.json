@@ -1,0 +1,8 @@
+[
+  {"inputs": [{"name": "from", "type": "address"}, {"name": "to", "type": "address"}, {"name": "value", "type": "uint256"}], "name": "preTransferCheck", "outputs": [{"name": "code", "type": "uint256"}, {"name": "reason", "type": "string"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [], "name": "walletCount", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [{"name": "index", "type": "uint256"}], "name": "getWalletAt", "outputs": [{"type": "address"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [], "name": "isPaused", "outputs": [{"type": "bool"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [], "name": "totalIssued", "outputs": [{"type": "uint256"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [{"name": "serviceId", "type": "uint256"}], "name": "getDSService", "outputs": [{"type": "address"}], "stateMutability": "view", "type": "function"}
+]

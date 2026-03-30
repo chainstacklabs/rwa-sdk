@@ -1,0 +1,3 @@
+[
+  {"inputs": [{"name": "addr", "type": "address"}], "name": "isBlocked", "outputs": [{"type": "bool"}], "stateMutability": "view", "type": "function"}
+]

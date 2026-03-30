@@ -1,0 +1,3 @@
+[
+  {"inputs": [{"name": "addr", "type": "address"}], "name": "isSanctioned", "outputs": [{"type": "bool"}], "stateMutability": "view", "type": "function"}
+]
