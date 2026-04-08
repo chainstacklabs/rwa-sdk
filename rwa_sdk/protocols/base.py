@@ -32,6 +32,7 @@ class ProtocolAdapter(Protocol):
         token_address: str,
         from_addr: str,
         to_addr: str,
+        value: int = 0,
     ) -> ComplianceCheck:
         """Check whether a transfer is permitted under this protocol's compliance model.
 
@@ -39,6 +40,8 @@ class ProtocolAdapter(Protocol):
             token_address: Checksummed contract address of the token.
             from_addr: Sender wallet address.
             to_addr: Recipient wallet address.
+            value: Transfer amount in token base units (wei). Some protocols
+                require this for amount-gated compliance checks.
 
         Returns:
             ComplianceCheck with can_transfer=True if permitted.

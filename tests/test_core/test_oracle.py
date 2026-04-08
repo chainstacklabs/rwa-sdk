@@ -27,3 +27,14 @@ def test_custom_max_age() -> None:
 
     with pytest.raises(OracleStalenessError):
         assert_price_fresh(int(time.time()) - 31, max_age_seconds=30)
+
+
+def test_future_timestamp_raises_value_error() -> None:
+    with pytest.raises(ValueError, match="future"):
+        assert_price_fresh(int(time.time()) + 60)
+
+
+def test_millisecond_timestamp_raises_value_error() -> None:
+    ms_timestamp = int(time.time()) * 1000
+    with pytest.raises(ValueError, match="milliseconds"):
+        assert_price_fresh(ms_timestamp)

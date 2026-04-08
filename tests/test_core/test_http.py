@@ -1,7 +1,12 @@
 """Tests for core/http.py."""
 
+import urllib.error
 from typing import Any
+from unittest.mock import patch
 
+import pytest
+
+from rwa_sdk.core.exceptions import HttpError
 from rwa_sdk.core.http import DefaultHttpClient, HttpClient
 
 
@@ -27,3 +32,11 @@ def test_stub_satisfies_protocol():
 
 def test_default_client_satisfies_protocol():
     assert isinstance(DefaultHttpClient(), HttpClient)
+
+
+def test_network_error_raises_http_error():
+    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("timeout")):
+        with pytest.raises(HttpError) as exc_info:
+            DefaultHttpClient().get_json("http://example.com/api")
+    assert "http://example.com/api" in exc_info.value.url
+    assert isinstance(exc_info.value.cause, urllib.error.URLError)

@@ -19,7 +19,7 @@ class _ConformingAdapter:
         return []
 
     def can_transfer(
-        self, _token_address: str, _from_addr: str, _to_addr: str
+        self, _token_address: str, _from_addr: str, _to_addr: str, _value: int = 0
     ) -> ComplianceCheck:
         return ComplianceCheck(
             can_transfer=True,

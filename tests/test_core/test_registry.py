@@ -2,10 +2,10 @@
 
 import pytest
 
-from rwa_sdk.core.registry import BACKED, CENTRIFUGE, ETHEREUM, MAPLE, get_addresses
+from rwa_sdk.core.registry import get_addresses
 
 
-@pytest.mark.parametrize("protocol", ["backed", "centrifuge", "maple"])
+@pytest.mark.parametrize("protocol", ["ondo", "securitize", "backed", "centrifuge", "maple"])
 def test_tokens_shared_split(protocol: str) -> None:
     addrs = get_addresses(protocol)
     assert "tokens" in addrs, f"{protocol} missing 'tokens' key"

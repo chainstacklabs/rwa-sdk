@@ -1,6 +1,6 @@
 """Core models, exceptions, and utilities."""
 
-from rwa_sdk.core.exceptions import OracleStalenessError, RegistryError, RWASDKError
+from rwa_sdk.core.exceptions import HttpError, OracleStalenessError, RegistryError, RWASDKError
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
@@ -20,4 +20,5 @@ __all__ = [
     "TokenInfo",
     "YieldType",
     "assert_price_fresh",
+    "HttpError",
 ]
