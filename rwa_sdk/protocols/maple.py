@@ -19,7 +19,7 @@ _POOLS = {
     "syrup_usdt": {"name": "Maple syrupUSDT", "category": "private-credit"},
 }
 
-_LEND_FUNCTION_ID: bytes = b"P:lend" + b"\x00" * 26  # bytes32("P:lend")
+_LEND_FUNCTION_ID: bytes = b"P:lend" + b"\x00" * 26  # bytes32("P:lend") — Solidity bytes32 literals are right-padded with zeros
 
 
 class MapleAdapter:
@@ -100,6 +100,7 @@ class MapleAdapter:
 
         Tokens whose pool has a pool_manager registry entry use BITMAP compliance.
         All others (e.g. syrup_usdt) are permissionless and return NONE.
+        Compliance is checked sender-first; if the sender is blocked the receiver is not queried.
         """
         pool_key = self._resolve_pool_key(token_address)
         if pool_key is None:
@@ -114,7 +115,7 @@ class MapleAdapter:
 
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(pm_contract_addr),
-            abi=load_abi("maple_pool_manager"),
+            abi=load_abi("maple_pool_permission_manager"),
         )
         checksum_pm = Web3.to_checksum_address(pool_manager_addr)
         sender_ok = contract.functions.hasPermission(
