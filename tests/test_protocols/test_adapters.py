@@ -193,10 +193,68 @@ class TestOndoAdapter:
 # ---------------------------------------------------------------------------
 
 class TestMapleAdapter:
-    def test_can_transfer_always_allowed(self, w3):
+    SYRUP_USDC_POOL = "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b"
+    SYRUP_USDT_POOL = "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D"
+
+    def test_can_transfer_bitmap_both_permitted(self, w3):
+        adapter = MapleAdapter(w3)
+        mock_contract = MagicMock()
+        mock_contract.functions.hasPermission.return_value.call.return_value = True
+        w3.eth.contract.return_value = mock_contract
+
+        result = adapter.can_transfer(
+            self.SYRUP_USDC_POOL,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.can_transfer is True
+        assert result.method == ComplianceMethod.BITMAP
+
+    def test_can_transfer_bitmap_sender_blocked(self, w3):
+        adapter = MapleAdapter(w3)
+        mock_contract = MagicMock()
+        mock_contract.functions.hasPermission.return_value.call.side_effect = [False, True]
+        w3.eth.contract.return_value = mock_contract
+
+        result = adapter.can_transfer(
+            self.SYRUP_USDC_POOL,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.can_transfer is False
+        assert "sender" in result.restriction_message
+        assert result.method == ComplianceMethod.BITMAP
+
+    def test_can_transfer_bitmap_receiver_blocked(self, w3):
+        adapter = MapleAdapter(w3)
+        mock_contract = MagicMock()
+        mock_contract.functions.hasPermission.return_value.call.side_effect = [True, False]
+        w3.eth.contract.return_value = mock_contract
+
+        result = adapter.can_transfer(
+            self.SYRUP_USDC_POOL,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.can_transfer is False
+        assert "receiver" in result.restriction_message
+        assert result.method == ComplianceMethod.BITMAP
+
+    def test_can_transfer_none_when_no_pool_manager(self, w3):
+        """syrup_usdt has no pool_manager entry — falls back to NONE."""
         adapter = MapleAdapter(w3)
         result = adapter.can_transfer(
-            "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+            self.SYRUP_USDT_POOL,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.can_transfer is True
+        assert result.method == ComplianceMethod.NONE
+
+    def test_can_transfer_none_for_unknown_token(self, w3):
+        adapter = MapleAdapter(w3)
+        result = adapter.can_transfer(
+            "0x000000000000000000000000000000000000dEaD",
             "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
             "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
         )
