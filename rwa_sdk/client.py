@@ -60,6 +60,7 @@ class RWA:
 
     @property
     def w3(self) -> Web3:
+        """Access the underlying Web3 instance."""
         return self._w3
 
     # ------------------------------------------------------------------
@@ -75,6 +76,8 @@ class RWA:
 
     def register_adapter(self, adapter: ProtocolAdapter) -> None:
         """Register a custom protocol adapter."""
+        if not isinstance(adapter, ProtocolAdapter):
+            raise TypeError(f"Expected ProtocolAdapter, got {type(adapter).__name__!r}")
         self._adapters.append(adapter)
 
     def balance_of(self, symbol: str, wallet: str) -> float:
@@ -85,10 +88,15 @@ class RWA:
             wallet: Wallet address to query.
 
         Returns:
-            Balance scaled by token decimals.
+            Human-readable float balance (raw amount divided by 10^decimals).
 
         Raises:
             ValueError: If the symbol is not found across registered adapters.
+
+        Note:
+            Each call resolves the token address by querying all adapters. For
+            protocols with on-chain or HTTP lookups in all_tokens(), this incurs
+            one network round-trip per adapter per call.
         """
         address = self._resolve_token_address(symbol)
         return erc20.read_balance(self._w3, address, wallet)

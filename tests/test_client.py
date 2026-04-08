@@ -61,6 +61,10 @@ class TestBackwardsCompatProperties:
     def test_centrifuge_property_returns_adapter(self, rwa):
         assert rwa.centrifuge.protocol == "centrifuge"
 
+    def test_adapter_by_protocol_raises_for_unknown_protocol(self, rwa):
+        with pytest.raises(ValueError, match="No adapter registered for protocol"):
+            rwa._adapter_by_protocol("nonexistent")
+
 
 class TestAllTokens:
     def test_all_tokens_aggregates_all_adapters(self, rwa):
