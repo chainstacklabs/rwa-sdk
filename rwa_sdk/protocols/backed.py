@@ -9,7 +9,7 @@ from rwa_sdk.core.models import (
     TokenInfo,
     YieldType,
 )
-from rwa_sdk.core.registry import BACKED, ETHEREUM
+from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_token_metadata
 
 # Token metadata not available on-chain in a structured way
@@ -26,7 +26,15 @@ class BackedAdapter:
     def __init__(self, w3: Web3, chain_id: int = ETHEREUM):
         self._w3 = w3
         self._chain_id = chain_id
-        self._addresses = BACKED.get(chain_id, {})
+        self._addresses = get_addresses("backed", chain_id)
+
+    @property
+    def protocol(self) -> str:
+        return "backed"
+
+    @property
+    def chain_id(self) -> int:
+        return self._chain_id
 
     # --- Tokens ---
 
@@ -43,7 +51,7 @@ class BackedAdapter:
         return self._read_token("bnvda")
 
     def _read_token(self, token_key: str) -> TokenInfo:
-        addrs = self._addresses[token_key]
+        addrs = self._addresses["tokens"][token_key]
         meta = read_token_metadata(self._w3, addrs["token"])
         token_meta = _TOKEN_META[token_key]
 
@@ -85,12 +93,10 @@ class BackedAdapter:
 
     # --- Compliance ---
 
-    def is_sanctioned(self, address: str) -> bool:
-        """Check if address is on the Chainalysis sanctions list."""
-        sanctions_addr = self._addresses.get("sanctions_list")
+    def _is_sanctioned(self, address: str) -> bool:
+        sanctions_addr = self._addresses["shared"].get("sanctions_list")
         if not sanctions_addr:
             return False
-
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(sanctions_addr),
             abi=load_abi("chainalysis_sanctions"),
@@ -99,10 +105,12 @@ class BackedAdapter:
             Web3.to_checksum_address(address)
         ).call()
 
-    def can_transfer(self, from_addr: str, to_addr: str) -> ComplianceCheck:
+    def can_transfer(
+        self, token_address: str, from_addr: str, to_addr: str, value: int = 0
+    ) -> ComplianceCheck:
         """Check if a transfer would be allowed (sanctions check only)."""
-        from_sanctioned = self.is_sanctioned(from_addr)
-        to_sanctioned = self.is_sanctioned(to_addr)
+        from_sanctioned = self._is_sanctioned(from_addr)
+        to_sanctioned = self._is_sanctioned(to_addr)
 
         if from_sanctioned or to_sanctioned:
             who = "sender" if from_sanctioned else "receiver"
@@ -120,9 +128,8 @@ class BackedAdapter:
             method=ComplianceMethod.SANCTIONS,
         )
 
-    def is_paused(self, token_key: str) -> bool:
-        """Check if a Backed token is paused."""
-        addrs = self._addresses[token_key]
+    def _is_paused(self, token_key: str) -> bool:
+        addrs = self._addresses["tokens"][token_key]
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(addrs["token"]),
             abi=load_abi("backed_token"),
@@ -135,6 +142,6 @@ class BackedAdapter:
         """Get info for all Backed tokens on this chain."""
         tokens = []
         for key in _TOKEN_META:
-            if key in self._addresses:
+            if key in self._addresses["tokens"]:
                 tokens.append(self._read_token(key))
         return tokens

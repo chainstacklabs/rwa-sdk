@@ -1,18 +1,19 @@
 """Centrifuge adapter — private credit pools, tranche tokens."""
 
-import json
-import urllib.request
-
+import logging
 from web3 import Web3
 
+_log = logging.getLogger(__name__)
+
 from rwa_sdk.core.abi import combined_abi, load_abi
+from rwa_sdk.core.http import DefaultHttpClient, HttpClient
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
     TokenInfo,
     YieldType,
 )
-from rwa_sdk.core.registry import CENTRIFUGE, ETHEREUM
+from rwa_sdk.core.registry import ETHEREUM, get_addresses
 
 CENTRIFUGE_API = "https://api.centrifuge.io"
 
@@ -28,10 +29,26 @@ _TOKENS = {
 class CentrifugeAdapter:
     """Read-only adapter for Centrifuge private credit pools."""
 
-    def __init__(self, w3: Web3, chain_id: int = ETHEREUM):
+    def __init__(
+        self,
+        w3: Web3,
+        chain_id: int = ETHEREUM,
+        http: HttpClient | None = None,
+        api_url: str = CENTRIFUGE_API,
+    ):
         self._w3 = w3
         self._chain_id = chain_id
-        self._addresses = CENTRIFUGE.get(chain_id, {})
+        self._addresses = get_addresses("centrifuge", chain_id)
+        self._http = http or DefaultHttpClient()
+        self._api_url = api_url
+
+    @property
+    def protocol(self) -> str:
+        return "centrifuge"
+
+    @property
+    def chain_id(self) -> int:
+        return self._chain_id
 
     def jtrsy(self) -> TokenInfo:
         """Get JTRSY tranche token info.
@@ -63,11 +80,17 @@ class CentrifugeAdapter:
         """
         return self._graphql_query(query, {"poolId": pool_id})
 
-    def check_transfer_restriction(
-        self, from_addr: str, to_addr: str, value: int, token_key: str = "jtrsy"
+    def can_transfer(
+        self, token_address: str, from_addr: str, to_addr: str, value: int = 0
     ) -> ComplianceCheck:
         """Check ERC-1404 transfer restriction on a tranche token."""
-        addrs = self._addresses[token_key]
+        token_key = self._resolve_token_key(token_address)
+        return self._check_transfer_restriction(from_addr, to_addr, value, token_key)
+
+    def _check_transfer_restriction(
+        self, from_addr: str, to_addr: str, value: int, token_key: str = "jtrsy"
+    ) -> ComplianceCheck:
+        addrs = self._addresses["tokens"][token_key]
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(addrs["token"]),
             abi=combined_abi("erc20", "centrifuge_tranche"),
@@ -91,6 +114,7 @@ class CentrifugeAdapter:
                 method=ComplianceMethod.TRANSFER_RESTRICTION,
             )
         except Exception as e:
+            _log.warning("detectTransferRestriction failed for %s: %s", token_key, e)
             return ComplianceCheck(
                 can_transfer=False,
                 restriction_code=255,
@@ -99,7 +123,7 @@ class CentrifugeAdapter:
             )
 
     def _read_token(self, token_key: str) -> TokenInfo:
-        addrs = self._addresses[token_key]
+        addrs = self._addresses["tokens"][token_key]
         meta = _TOKENS[token_key]
 
         # On-chain ERC-20 reads
@@ -167,22 +191,23 @@ class CentrifugeAdapter:
 
     def _graphql_query(self, query: str, variables: dict | None = None) -> dict:
         """Execute a GraphQL query against the Centrifuge API."""
-        payload = json.dumps({"query": query, "variables": variables or {}}).encode()
-        req = urllib.request.Request(
-            CENTRIFUGE_API,
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "rwa-sdk/0.1.0",
-            },
+        return self._http.post_json(
+            self._api_url,
+            {"query": query, "variables": variables or {}},
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read())
+
+    def _resolve_token_key(self, token_address: str) -> str:
+        """Resolve a checksummed token address to its registry key."""
+        checksum = Web3.to_checksum_address(token_address)
+        for key, addrs in self._addresses["tokens"].items():
+            if Web3.to_checksum_address(addrs["token"]) == checksum:
+                return key
+        return "jtrsy"
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Centrifuge tokens on this chain."""
         tokens = []
         for key in _TOKENS:
-            if key in self._addresses:
+            if key in self._addresses["tokens"]:
                 tokens.append(self._read_token(key))
         return tokens

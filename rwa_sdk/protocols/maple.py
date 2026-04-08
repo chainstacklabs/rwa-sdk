@@ -10,7 +10,8 @@ from rwa_sdk.core.models import (
     TokenInfo,
     YieldType,
 )
-from rwa_sdk.core.registry import MAPLE, ETHEREUM
+from rwa_sdk.core.registry import ETHEREUM, get_addresses
+from rwa_sdk.standards.erc20 import read_balance
 
 
 _POOLS = {
@@ -25,7 +26,15 @@ class MapleAdapter:
     def __init__(self, w3: Web3, chain_id: int = ETHEREUM):
         self._w3 = w3
         self._chain_id = chain_id
-        self._addresses = MAPLE.get(chain_id, {})
+        self._addresses = get_addresses("maple", chain_id)
+
+    @property
+    def protocol(self) -> str:
+        return "maple"
+
+    @property
+    def chain_id(self) -> int:
+        return self._chain_id
 
     def syrup_usdc(self) -> TokenInfo:
         """Get syrupUSDC pool token info."""
@@ -37,7 +46,7 @@ class MapleAdapter:
 
     def pool_info(self, pool_key: str = "syrup_usdc") -> PoolInfo:
         """Get detailed pool info for a Maple pool."""
-        addrs = self._addresses[pool_key]
+        addrs = self._addresses["tokens"][pool_key]
         pool_addr = addrs["pool"]
         contract = self._get_pool_contract(pool_addr)
 
@@ -50,13 +59,7 @@ class MapleAdapter:
         asset_address = contract.functions.asset().call()
 
         # Utilization: (totalAssets - idle cash) / totalAssets
-        # Read underlying asset balance of pool via raw balanceOf call
-        balance_call_data = "0x70a08231" + Web3.to_checksum_address(pool_addr)[2:].zfill(64)
-        idle = self._w3.eth.call({
-            "to": Web3.to_checksum_address(asset_address),
-            "data": Web3.to_bytes(hexstr=balance_call_data),
-        })
-        idle_balance = int(idle.hex(), 16) / one_share
+        idle_balance = read_balance(self._w3, asset_address, pool_addr)
         utilization = (total_assets - idle_balance) / total_assets if total_assets > 0 else 0
 
         return PoolInfo(
@@ -72,7 +75,7 @@ class MapleAdapter:
 
     def share_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get current share price (gross, before unrealized losses)."""
-        addrs = self._addresses[pool_key]
+        addrs = self._addresses["tokens"][pool_key]
         contract = self._get_pool_contract(addrs["pool"])
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
@@ -81,15 +84,17 @@ class MapleAdapter:
 
     def exit_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get net share price (deducts unrealized losses)."""
-        addrs = self._addresses[pool_key]
+        addrs = self._addresses["tokens"][pool_key]
         contract = self._get_pool_contract(addrs["pool"])
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
         raw = contract.functions.convertToExitAssets(one_share).call()
         return raw / one_share
 
-    def can_transfer(self, from_addr: str, to_addr: str) -> ComplianceCheck:
-        """syrupUSDC pool tokens are permissionless — always allowed."""
+    def can_transfer(
+        self, token_address: str, from_addr: str, to_addr: str, value: int = 0
+    ) -> ComplianceCheck:
+        """Maple pool tokens are permissionless — always allowed."""
         return ComplianceCheck(
             can_transfer=True,
             restriction_code=0,
@@ -98,7 +103,7 @@ class MapleAdapter:
         )
 
     def _read_pool_token(self, pool_key: str) -> TokenInfo:
-        addrs = self._addresses[pool_key]
+        addrs = self._addresses["tokens"][pool_key]
         pool_addr = addrs["pool"]
         contract = self._get_pool_contract(pool_addr)
         meta = _POOLS[pool_key]
@@ -137,6 +142,6 @@ class MapleAdapter:
         """Get info for all Maple pool tokens on this chain."""
         tokens = []
         for key in _POOLS:
-            if key in self._addresses:
+            if key in self._addresses["tokens"]:
                 tokens.append(self._read_pool_token(key))
         return tokens

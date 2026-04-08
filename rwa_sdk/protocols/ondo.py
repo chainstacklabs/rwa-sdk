@@ -9,7 +9,7 @@ from rwa_sdk.core.models import (
     TokenInfo,
     YieldType,
 )
-from rwa_sdk.core.registry import ONDO, ETHEREUM
+from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_token_metadata
 
 
@@ -19,13 +19,21 @@ class OndoAdapter:
     def __init__(self, w3: Web3, chain_id: int = ETHEREUM):
         self._w3 = w3
         self._chain_id = chain_id
-        self._addresses = ONDO.get(chain_id, {})
+        self._addresses = get_addresses("ondo", chain_id)
+
+    @property
+    def protocol(self) -> str:
+        return "ondo"
+
+    @property
+    def chain_id(self) -> int:
+        return self._chain_id
 
     # --- USDY ---
 
     def usdy(self) -> TokenInfo:
         """Get USDY token info with current price from oracle."""
-        addrs = self._addresses["usdy"]
+        addrs = self._addresses["tokens"]["usdy"]
         meta = read_token_metadata(self._w3, addrs["token"])
         price = self._read_usdy_price(addrs["oracle"])
         tvl = meta["total_supply"] * price if price else None
@@ -47,7 +55,7 @@ class OndoAdapter:
 
     def usdy_price(self) -> float:
         """Get current USDY price from oracle (18 decimals)."""
-        return self._read_usdy_price(self._addresses["usdy"]["oracle"])
+        return self._read_usdy_price(self._addresses["tokens"]["usdy"]["oracle"])
 
     def _read_usdy_price(self, oracle_address: str) -> float:
         contract = self._w3.eth.contract(
@@ -61,7 +69,7 @@ class OndoAdapter:
 
     def ousg(self) -> TokenInfo:
         """Get OUSG token info with current price from oracle."""
-        addrs = self._addresses["ousg"]
+        addrs = self._addresses["tokens"]["ousg"]
         meta = read_token_metadata(self._w3, addrs["token"])
         price = self._read_ousg_price(addrs["oracle"], addrs["token"])
         tvl = meta["total_supply"] * price if price else None
@@ -83,7 +91,7 @@ class OndoAdapter:
 
     def ousg_price(self) -> float:
         """Get current OUSG price from oracle (18 decimals)."""
-        addrs = self._addresses["ousg"]
+        addrs = self._addresses["tokens"]["ousg"]
         return self._read_ousg_price(addrs["oracle"], addrs["token"])
 
     def _read_ousg_price(self, oracle_address: str, token_address: str) -> float:
@@ -100,7 +108,7 @@ class OndoAdapter:
 
     def rusdy(self) -> TokenInfo:
         """Get rUSDY rebasing token info."""
-        addrs = self._addresses["rusdy"]
+        addrs = self._addresses["tokens"]["rusdy"]
         meta = read_token_metadata(self._w3, addrs["token"])
 
         return TokenInfo(
@@ -120,7 +128,7 @@ class OndoAdapter:
 
     def rusdy_shares(self, holder: str) -> dict:
         """Get underlying shares for an rUSDY holder."""
-        addrs = self._addresses["rusdy"]
+        addrs = self._addresses["tokens"]["rusdy"]
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(addrs["token"]),
             abi=combined_abi("erc20", "ondo_rebasing"),
@@ -140,7 +148,7 @@ class OndoAdapter:
 
     def rousg(self) -> TokenInfo:
         """Get rOUSG rebasing token info."""
-        addrs = self._addresses["rousg"]
+        addrs = self._addresses["tokens"]["rousg"]
         meta = read_token_metadata(self._w3, addrs["token"])
 
         return TokenInfo(
@@ -160,9 +168,29 @@ class OndoAdapter:
 
     # --- Compliance ---
 
+    def can_transfer(
+        self, token_address: str, from_addr: str, to_addr: str, value: int = 0
+    ) -> ComplianceCheck:
+        """Dispatch to the correct compliance check based on token address."""
+        checksum = Web3.to_checksum_address(token_address)
+        tokens = self._addresses["tokens"]
+
+        usdy_addr = Web3.to_checksum_address(tokens["usdy"]["token"]) if "usdy" in tokens else None
+        ousg_addr = Web3.to_checksum_address(tokens["ousg"]["token"]) if "ousg" in tokens else None
+
+        if checksum == usdy_addr:
+            return self._can_transfer_usdy(from_addr, to_addr)
+        if checksum == ousg_addr:
+            return self._can_transfer_ousg(from_addr, to_addr)
+
+        # rUSDY and rOUSG are rebasing wrappers around USDY/OUSG respectively.
+        # They share the same blocklist contract, so USDY compliance applies.
+        # Any unrecognised token address on this chain also falls back here.
+        return self._can_transfer_usdy(from_addr, to_addr)
+
     def is_blocked(self, address: str) -> bool:
         """Check if address is on the USDY blocklist."""
-        addrs = self._addresses["usdy"]
+        addrs = self._addresses["tokens"]["usdy"]
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(addrs["blocklist"]),
             abi=load_abi("ondo_blocklist"),
@@ -173,7 +201,7 @@ class OndoAdapter:
 
     def check_kyc(self, address: str, group: int = 0) -> bool:
         """Check KYC status for OUSG (requires KYC registry)."""
-        addrs = self._addresses["ousg"]
+        addrs = self._addresses["tokens"]["ousg"]
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(addrs["kyc_registry"]),
             abi=load_abi("ondo_kyc_registry"),
@@ -182,8 +210,7 @@ class OndoAdapter:
             group, Web3.to_checksum_address(address)
         ).call()
 
-    def can_transfer_usdy(self, from_addr: str, to_addr: str) -> ComplianceCheck:
-        """Check if a USDY transfer would be allowed."""
+    def _can_transfer_usdy(self, from_addr: str, to_addr: str) -> ComplianceCheck:
         from_blocked = self.is_blocked(from_addr)
         to_blocked = self.is_blocked(to_addr)
 
@@ -203,10 +230,9 @@ class OndoAdapter:
             method=ComplianceMethod.BLOCKLIST,
         )
 
-    def can_transfer_ousg(
+    def _can_transfer_ousg(
         self, from_addr: str, to_addr: str, group: int = 0
     ) -> ComplianceCheck:
-        """Check if an OUSG transfer would be allowed (both parties need KYC)."""
         from_kyc = self.check_kyc(from_addr, group)
         to_kyc = self.check_kyc(to_addr, group)
 
@@ -230,13 +256,14 @@ class OndoAdapter:
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Ondo tokens on this chain."""
+        tokens_dict = self._addresses["tokens"]
         tokens = []
-        if "usdy" in self._addresses:
+        if "usdy" in tokens_dict:
             tokens.append(self.usdy())
-        if "ousg" in self._addresses:
+        if "ousg" in tokens_dict:
             tokens.append(self.ousg())
-        if "rusdy" in self._addresses:
+        if "rusdy" in tokens_dict:
             tokens.append(self.rusdy())
-        if "rousg" in self._addresses:
+        if "rousg" in tokens_dict:
             tokens.append(self.rousg())
         return tokens
