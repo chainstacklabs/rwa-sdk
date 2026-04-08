@@ -131,6 +131,7 @@ MAPLE = {
         },
         "shared": {
             "globals": "0x34E7014E2Ef62C2F3Cc8c8c25Ac0110E2aA33B00",
+            "pool_permission_manager": "0xBe10aDcE8B6E3E02Db384E7FaDA5395DD113D8b3",
         },
     },
 }

@@ -1,0 +1,20 @@
+[
+  {
+    "inputs": [
+      {"internalType": "address", "name": "poolManager_", "type": "address"},
+      {"internalType": "address", "name": "lender_", "type": "address"},
+      {"internalType": "bytes32", "name": "functionId_", "type": "bytes32"}
+    ],
+    "name": "hasPermission",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "name": "permissionLevels",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
