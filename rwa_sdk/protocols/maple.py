@@ -127,12 +127,14 @@ class MapleAdapter:
         if not sender_ok:
             return ComplianceCheck(
                 can_transfer=False,
+                restriction_code=1,
                 restriction_message="sender not permitted",
                 method=ComplianceMethod.BITMAP,
             )
         if not receiver_ok:
             return ComplianceCheck(
                 can_transfer=False,
+                restriction_code=1,
                 restriction_message="receiver not permitted",
                 method=ComplianceMethod.BITMAP,
             )
@@ -175,7 +177,11 @@ class MapleAdapter:
         )
 
     def _resolve_pool_key(self, token_address: str) -> str | None:
-        """Return pool key whose pool address matches token_address, else None."""
+        """Return pool key whose pool address matches token_address, else None.
+
+        In Maple's ERC-4626 model the pool contract is also the token contract,
+        so pool address and token address are the same.
+        """
         checksummed = Web3.to_checksum_address(token_address)
         for key, addrs in self._addresses.get("tokens", {}).items():
             pool = addrs.get("pool", "")

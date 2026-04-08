@@ -222,6 +222,7 @@ class TestMapleAdapter:
             "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
         )
         assert result.can_transfer is False
+        assert result.restriction_code == 1
         assert "sender" in result.restriction_message
         assert result.method == ComplianceMethod.BITMAP
 
@@ -237,6 +238,7 @@ class TestMapleAdapter:
             "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
         )
         assert result.can_transfer is False
+        assert result.restriction_code == 1
         assert "receiver" in result.restriction_message
         assert result.method == ComplianceMethod.BITMAP
 
