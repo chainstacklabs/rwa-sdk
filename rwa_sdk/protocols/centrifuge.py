@@ -1,6 +1,9 @@
 """Centrifuge adapter — private credit pools, tranche tokens."""
 
+import logging
 from web3 import Web3
+
+_log = logging.getLogger(__name__)
 
 from rwa_sdk.core.abi import combined_abi, load_abi
 from rwa_sdk.core.http import DefaultHttpClient, HttpClient
@@ -31,11 +34,13 @@ class CentrifugeAdapter:
         w3: Web3,
         chain_id: int = ETHEREUM,
         http: HttpClient | None = None,
+        api_url: str = CENTRIFUGE_API,
     ):
         self._w3 = w3
         self._chain_id = chain_id
         self._addresses = get_addresses("centrifuge", chain_id)
         self._http = http or DefaultHttpClient()
+        self._api_url = api_url
 
     @property
     def protocol(self) -> str:
@@ -109,6 +114,7 @@ class CentrifugeAdapter:
                 method=ComplianceMethod.TRANSFER_RESTRICTION,
             )
         except Exception as e:
+            _log.warning("detectTransferRestriction failed for %s: %s", token_key, e)
             return ComplianceCheck(
                 can_transfer=False,
                 restriction_code=255,
@@ -186,7 +192,7 @@ class CentrifugeAdapter:
     def _graphql_query(self, query: str, variables: dict | None = None) -> dict:
         """Execute a GraphQL query against the Centrifuge API."""
         return self._http.post_json(
-            CENTRIFUGE_API,
+            self._api_url,
             {"query": query, "variables": variables or {}},
         )
 

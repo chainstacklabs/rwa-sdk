@@ -53,7 +53,13 @@ class SecuritizeAdapter:
     def can_transfer(
         self, token_address: str, from_addr: str, to_addr: str, value: int = 0
     ) -> ComplianceCheck:
-        """Run Securitize DS Protocol pre-transfer compliance check."""
+        """Run Securitize DS Protocol pre-transfer compliance check.
+
+        Calls the on-chain `preTransferCheck(from, to, value)` function.
+        Returns `restriction_code=0` if the transfer is permitted; any other
+        code indicates a compliance failure with a human-readable reason in
+        `restriction_message`.
+        """
         token_key = self._resolve_token_key(token_address)
         return self._pre_transfer_check(from_addr, to_addr, value, token_key)
 

@@ -183,7 +183,9 @@ class OndoAdapter:
         if checksum == ousg_addr:
             return self._can_transfer_ousg(from_addr, to_addr)
 
-        # rUSDY and rOUSG are rebasing wrappers — same underlying compliance
+        # rUSDY and rOUSG are rebasing wrappers around USDY/OUSG respectively.
+        # They share the same blocklist contract, so USDY compliance applies.
+        # Any unrecognised token address on this chain also falls back here.
         return self._can_transfer_usdy(from_addr, to_addr)
 
     def is_blocked(self, address: str) -> bool:
