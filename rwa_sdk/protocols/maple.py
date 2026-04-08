@@ -2,7 +2,7 @@
 
 from web3 import Web3
 
-from rwa_sdk.core.abi import combined_abi
+from rwa_sdk.core.abi import combined_abi, load_abi
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
@@ -18,6 +18,8 @@ _POOLS = {
     "syrup_usdc": {"name": "Maple syrupUSDC", "category": "private-credit"},
     "syrup_usdt": {"name": "Maple syrupUSDT", "category": "private-credit"},
 }
+
+_LEND_FUNCTION_ID: bytes = b"P:lend" + b"\x00" * 26  # bytes32("P:lend") — Solidity bytes32 literals are right-padded with zeros
 
 
 class MapleAdapter:
@@ -94,13 +96,50 @@ class MapleAdapter:
     def can_transfer(
         self, token_address: str, from_addr: str, to_addr: str, value: int = 0
     ) -> ComplianceCheck:
-        """Maple pool tokens are permissionless — always allowed."""
-        return ComplianceCheck(
-            can_transfer=True,
-            restriction_code=0,
-            restriction_message="",
-            method=ComplianceMethod.NONE,
+        """Check transfer eligibility via Maple PoolPermissionManager.
+
+        Tokens whose pool has a pool_manager registry entry use BITMAP compliance.
+        All others (e.g. syrup_usdt) are permissionless and return NONE.
+        Compliance is checked sender-first; if the sender is blocked the receiver is not queried.
+        """
+        pool_key = self._resolve_pool_key(token_address)
+        if pool_key is None:
+            return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
+
+        token_addrs = self._addresses["tokens"][pool_key]
+        pool_manager_addr = token_addrs.get("pool_manager")
+        pm_contract_addr = self._addresses.get("shared", {}).get("pool_permission_manager")
+
+        if not pool_manager_addr or not pm_contract_addr:
+            return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
+
+        contract = self._w3.eth.contract(
+            address=Web3.to_checksum_address(pm_contract_addr),
+            abi=load_abi("maple_pool_permission_manager"),
         )
+        checksum_pm = Web3.to_checksum_address(pool_manager_addr)
+        sender_ok = contract.functions.hasPermission(
+            checksum_pm, Web3.to_checksum_address(from_addr), _LEND_FUNCTION_ID
+        ).call()
+        receiver_ok = contract.functions.hasPermission(
+            checksum_pm, Web3.to_checksum_address(to_addr), _LEND_FUNCTION_ID
+        ).call()
+
+        if not sender_ok:
+            return ComplianceCheck(
+                can_transfer=False,
+                restriction_code=1,
+                restriction_message="sender not permitted",
+                method=ComplianceMethod.BITMAP,
+            )
+        if not receiver_ok:
+            return ComplianceCheck(
+                can_transfer=False,
+                restriction_code=1,
+                restriction_message="receiver not permitted",
+                method=ComplianceMethod.BITMAP,
+            )
+        return ComplianceCheck(can_transfer=True, method=ComplianceMethod.BITMAP)
 
     def _read_pool_token(self, pool_key: str) -> TokenInfo:
         addrs = self._addresses["tokens"][pool_key]
@@ -137,6 +176,19 @@ class MapleAdapter:
             address=Web3.to_checksum_address(address),
             abi=combined_abi("erc20", "erc4626", "maple_pool"),
         )
+
+    def _resolve_pool_key(self, token_address: str) -> str | None:
+        """Return pool key whose pool address matches token_address, else None.
+
+        In Maple's ERC-4626 model the pool contract is also the token contract,
+        so pool address and token address are the same.
+        """
+        checksummed = Web3.to_checksum_address(token_address)
+        for key, addrs in self._addresses.get("tokens", {}).items():
+            pool = addrs.get("pool", "")
+            if pool and Web3.to_checksum_address(pool) == checksummed:
+                return key
+        return None
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Maple pool tokens on this chain."""
