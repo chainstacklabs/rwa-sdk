@@ -9,7 +9,7 @@ from rwa_sdk.core.models import (
     TokenInfo,
     YieldType,
 )
-from rwa_sdk.core.registry import SECURITIZE, ETHEREUM
+from rwa_sdk.core.registry import ETHEREUM, get_addresses
 
 
 _TOKENS = {
@@ -24,7 +24,15 @@ class SecuritizeAdapter:
     def __init__(self, w3: Web3, chain_id: int = ETHEREUM):
         self._w3 = w3
         self._chain_id = chain_id
-        self._addresses = SECURITIZE.get(chain_id, {})
+        self._addresses = get_addresses("securitize", chain_id)
+
+    @property
+    def protocol(self) -> str:
+        return "securitize"
+
+    @property
+    def chain_id(self) -> int:
+        return self._chain_id
 
     def buidl(self) -> TokenInfo:
         """Get BUIDL token info."""
@@ -36,28 +44,28 @@ class SecuritizeAdapter:
 
     def wallet_count(self, token_key: str = "buidl") -> int:
         """Get the number of BUIDL holder wallets."""
-        contract = self._get_contract(token_key)
-        return contract.functions.walletCount().call()
+        return self._get_contract(token_key).functions.walletCount().call()
 
     def get_wallet_at(self, index: int, token_key: str = "buidl") -> str:
         """Get holder address by index."""
-        contract = self._get_contract(token_key)
-        return contract.functions.getWalletAt(index).call()
+        return self._get_contract(token_key).functions.getWalletAt(index).call()
 
-    def pre_transfer_check(
+    def can_transfer(
+        self, token_address: str, from_addr: str, to_addr: str, value: int = 0
+    ) -> ComplianceCheck:
+        """Run Securitize DS Protocol pre-transfer compliance check."""
+        token_key = self._resolve_token_key(token_address)
+        return self._pre_transfer_check(from_addr, to_addr, value, token_key)
+
+    def _pre_transfer_check(
         self, from_addr: str, to_addr: str, value: int, token_key: str = "buidl"
     ) -> ComplianceCheck:
-        """Run Securitize pre-transfer compliance check.
-
-        Returns code 0 if transfer would succeed, otherwise a reason string.
-        """
         contract = self._get_contract(token_key)
         code, reason = contract.functions.preTransferCheck(
             Web3.to_checksum_address(from_addr),
             Web3.to_checksum_address(to_addr),
             value,
         ).call()
-
         return ComplianceCheck(
             can_transfer=(code == 0),
             restriction_code=code,
@@ -65,21 +73,18 @@ class SecuritizeAdapter:
             method=ComplianceMethod.PRE_TRANSFER_CHECK,
         )
 
-    def is_paused(self, token_key: str = "buidl") -> bool:
-        """Check if token transfers are paused."""
-        contract = self._get_contract(token_key)
-        return contract.functions.isPaused().call()
+    def _is_paused(self, token_key: str = "buidl") -> bool:
+        return self._get_contract(token_key).functions.isPaused().call()
 
     def get_ds_service(self, service_id: int, token_key: str = "buidl") -> str:
         """Get address of a DS Protocol service.
 
         service_id 1 = RegistryService, 2 = ComplianceService
         """
-        contract = self._get_contract(token_key)
-        return contract.functions.getDSService(service_id).call()
+        return self._get_contract(token_key).functions.getDSService(service_id).call()
 
     def _read_token(self, token_key: str) -> TokenInfo:
-        addrs = self._addresses[token_key]
+        addrs = self._addresses["tokens"][token_key]
         contract = self._get_contract(token_key)
         meta = _TOKENS[token_key]
 
@@ -104,16 +109,24 @@ class SecuritizeAdapter:
         )
 
     def _get_contract(self, token_key: str):
-        addrs = self._addresses[token_key]
+        addrs = self._addresses["tokens"][token_key]
         return self._w3.eth.contract(
             address=Web3.to_checksum_address(addrs["token"]),
             abi=combined_abi("erc20", "securitize_token"),
         )
 
+    def _resolve_token_key(self, token_address: str) -> str:
+        """Resolve a checksummed token address to its registry key."""
+        checksum = Web3.to_checksum_address(token_address)
+        for key, addrs in self._addresses["tokens"].items():
+            if Web3.to_checksum_address(addrs["token"]) == checksum:
+                return key
+        return "buidl"
+
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Securitize tokens on this chain."""
         tokens = []
         for key in _TOKENS:
-            if key in self._addresses:
+            if key in self._addresses["tokens"]:
                 tokens.append(self._read_token(key))
         return tokens
