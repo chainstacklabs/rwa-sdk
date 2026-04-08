@@ -8,6 +8,7 @@ from rwa_sdk.core.models import (
     TokenInfo,
     YieldType,
 )
+from rwa_sdk.core.oracle import assert_price_fresh
 
 __all__ = [
     "ComplianceCheck",
@@ -18,4 +19,5 @@ __all__ = [
     "RWASDKError",
     "TokenInfo",
     "YieldType",
+    "assert_price_fresh",
 ]
