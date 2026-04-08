@@ -29,3 +29,8 @@ Repository = "https://github.com/chainstacklabs/rwa-sdk"
 
 [tool.hatch.build.targets.wheel]
 packages = ["rwa_sdk"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
