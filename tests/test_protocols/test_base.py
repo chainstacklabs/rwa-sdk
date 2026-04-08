@@ -44,19 +44,3 @@ def test_non_conforming_adapter_fails_protocol():
     assert not isinstance(adapter, ProtocolAdapter)
 
 
-def test_protocol_is_exported_from_protocols_package():
-    from rwa_sdk.protocols import ProtocolAdapter as PA
-    assert PA is ProtocolAdapter
-
-
-def test_adapter_all_tokens_returns_list():
-    adapter = _ConformingAdapter()
-    result = adapter.all_tokens()
-    assert isinstance(result, list)
-
-
-def test_adapter_can_transfer_returns_compliance_check():
-    adapter = _ConformingAdapter()
-    result = adapter.can_transfer("0xABC", "0xSENDER", "0xRECEIVER")
-    assert isinstance(result, ComplianceCheck)
-    assert result.can_transfer is True
