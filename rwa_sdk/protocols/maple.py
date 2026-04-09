@@ -136,7 +136,7 @@ class MapleAdapter:
         return raw / one_share
 
     def can_transfer(
-        self, token_address: str, from_addr: str, to_addr: str, value: int = 0
+        self, token_address: str, from_addr: str, to_addr: str, _value: int = 0
     ) -> ComplianceCheck:
         """Check transfer eligibility via Maple PoolPermissionManager.
 

@@ -217,7 +217,7 @@ class OndoAdapter:
     # --- Compliance ---
 
     def can_transfer(
-        self, token_address: str, from_addr: str, to_addr: str, value: int = 0
+        self, token_address: str, from_addr: str, to_addr: str, _value: int = 0
     ) -> ComplianceCheck:
         """Dispatch to the correct compliance check based on token address."""
         checksum = self._chain.checksum(token_address)

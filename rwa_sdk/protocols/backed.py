@@ -126,7 +126,7 @@ class BackedAdapter:
         return contract.functions.isSanctioned(self._chain.checksum(address)).call()
 
     def can_transfer(
-        self, token_address: str, from_addr: str, to_addr: str, value: int = 0
+        self, _token_address: str, from_addr: str, to_addr: str, _value: int = 0
     ) -> ComplianceCheck:
         from_sanctioned = self._is_sanctioned(from_addr)
         to_sanctioned = self._is_sanctioned(to_addr)
