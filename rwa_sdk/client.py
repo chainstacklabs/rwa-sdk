@@ -1,4 +1,4 @@
-"""Top-level RWA client — unified entry point."""
+"""Top-level RWAChain client — unified entry point."""
 
 from rwa_sdk.core.chain import chain_name as _chain_name
 from rwa_sdk.core.models import TokenInfo
@@ -10,17 +10,17 @@ from rwa_sdk.protocols.base import ProtocolAdapter
 from rwa_sdk.standards import erc20
 
 
-class RWA:
-    """Read-only SDK for querying RWA tokens across EVM chains.
+class RWAChain:
+    """Read-only SDK for querying RWAChain tokens across EVM chains.
 
     Usage:
-        rwa = RWA(rpc_url="https://nd-xxx.chainstack.com/xxx")
+        rwa = RWAChain(rpc_url="https://nd-xxx.chainstack.com/xxx")
         tokens = rwa.all_tokens()
         balance = rwa.balance_of("USDY", "0xYourWallet")
 
         # Multi-chain: one instance per chain RPC
-        eth = RWA(rpc_url="https://eth-rpc...")
-        arb = RWA(rpc_url="https://arb-rpc...")
+        eth = RWAChain(rpc_url="https://eth-rpc...")
+        arb = RWAChain(rpc_url="https://arb-rpc...")
         all_tokens = eth.all_tokens() + arb.all_tokens()
     """
 

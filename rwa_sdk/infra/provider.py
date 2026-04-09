@@ -11,7 +11,7 @@ def create_rpc_provider(rpc_url: str | None = None) -> Web3:
     """
     if rpc_url is None:
         raise ValueError(
-            "rpc_url is required. Example: RWA(rpc_url='https://ethereum-mainnet.core.chainstack.com/YOUR_KEY')"
+            "rpc_url is required. Example: RWAChain(rpc_url='https://ethereum-mainnet.core.chainstack.com/YOUR_KEY')"
         )
 
     return Web3(Web3.HTTPProvider(rpc_url))

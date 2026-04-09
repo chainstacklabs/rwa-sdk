@@ -1,6 +1,6 @@
 """Read-only Python SDK for querying Real World Asset tokens across EVM chains."""
 
-from rwa_sdk.client import RWA
+from rwa_sdk.client import RWAChain
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
@@ -10,7 +10,7 @@ from rwa_sdk.core.models import (
 )
 
 __all__ = [
-    "RWA",
+    "RWAChain",
     "ComplianceCheck",
     "ComplianceMethod",
     "PoolInfo",

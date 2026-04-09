@@ -1,10 +1,10 @@
-"""Tests for the RWA client."""
+"""Tests for the RWAChain client."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rwa_sdk.client import RWA
+from rwa_sdk.client import RWAChain
 from rwa_sdk.core.models import TokenInfo, YieldType
 from rwa_sdk.protocols.base import ProtocolAdapter
 
@@ -30,16 +30,16 @@ def _make_adapter_mock(protocol_name: str) -> MagicMock:
 
 @pytest.fixture
 def rwa():
-    """RWA instance with all adapters mocked to avoid real RPC calls."""
+    """RWAChain instance with all adapters mocked to avoid real RPC calls."""
     instances = {name: _make_adapter_mock(name) for name in ("ondo", "backed", "securitize", "maple", "centrifuge")}
     mock_registry = {name: MagicMock(return_value=inst) for name, inst in instances.items()}
 
     with (
-        patch("rwa_sdk.client._REGISTRY", mock_registry),
+        patch("rwa_sdk.protocols._REGISTRY", mock_registry),
         patch("rwa_sdk.client.create_rpc_provider") as mock_provider,
     ):
         mock_provider.return_value.eth.chain_id = 1
-        yield RWA()
+        yield RWAChain()
 
 
 class TestAdaptersNamespace:
@@ -61,7 +61,7 @@ class TestAdaptersNamespace:
     def test_adapters_raises_when_custom_adapters_injected(self):
         with patch("rwa_sdk.client.create_rpc_provider") as mock_provider:
             mock_provider.return_value.eth.chain_id = 1
-            rwa = RWA(rpc_url="http://fake", adapters=[])
+            rwa = RWAChain(rpc_url="http://fake", adapters=[])
         with pytest.raises(RuntimeError, match="not available"):
             _ = rwa.adapters
 
@@ -124,7 +124,7 @@ class TestInjectableAdapters:
 
         with patch("rwa_sdk.client.create_rpc_provider") as mock_provider:
             mock_provider.return_value.eth.chain_id = 1
-            rwa = RWA(rpc_url="http://fake", adapters=[mock_adapter])
+            rwa = RWAChain(rpc_url="http://fake", adapters=[mock_adapter])
 
         assert len(rwa._adapters) == 1
         assert rwa._adapters[0].protocol == "custom"
@@ -134,18 +134,18 @@ class TestInjectableAdapters:
         mock_registry = {name: MagicMock(return_value=inst) for name, inst in instances.items()}
 
         with (
-            patch("rwa_sdk.client._REGISTRY", mock_registry),
+            patch("rwa_sdk.protocols._REGISTRY", mock_registry),
             patch("rwa_sdk.client.create_rpc_provider") as mock_provider,
         ):
             mock_provider.return_value.eth.chain_id = 1
-            rwa = RWA(rpc_url="http://fake")
+            rwa = RWAChain(rpc_url="http://fake")
 
         assert len(rwa._adapters) == 5
 
     def test_empty_adapters_list_is_accepted(self):
         with patch("rwa_sdk.client.create_rpc_provider") as mock_provider:
             mock_provider.return_value.eth.chain_id = 1
-            rwa = RWA(rpc_url="http://fake", adapters=[])
+            rwa = RWAChain(rpc_url="http://fake", adapters=[])
 
         assert rwa._adapters == []
 
