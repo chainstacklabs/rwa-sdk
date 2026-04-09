@@ -112,6 +112,40 @@ class TestRegisterAdapter:
         assert rwa._adapter_by_protocol("custom") is stub
 
 
+class TestInjectableAdapters:
+    def test_injected_adapters_replace_defaults(self):
+        mock_adapter = MagicMock(spec=ProtocolAdapter)
+        mock_adapter.protocol = "custom"
+        mock_adapter.all_tokens.return_value = []
+
+        with patch("rwa_sdk.client.create_provider"):
+            rwa = RWA(rpc_url="http://fake", adapters=[mock_adapter])
+
+        assert len(rwa._adapters) == 1
+        assert rwa._adapters[0].protocol == "custom"
+
+    def test_default_adapters_instantiated_when_none_passed(self):
+        with (
+            patch("rwa_sdk.client.OndoAdapter") as MockOndo,
+            patch("rwa_sdk.client.BackedAdapter") as MockBacked,
+            patch("rwa_sdk.client.SecuritizeAdapter") as MockSecuritize,
+            patch("rwa_sdk.client.MapleAdapter") as MockMaple,
+            patch("rwa_sdk.client.CentrifugeAdapter") as MockCentrifuge,
+            patch("rwa_sdk.client.create_provider"),
+        ):
+            for m in (MockOndo, MockBacked, MockSecuritize, MockMaple, MockCentrifuge):
+                m.return_value.all_tokens.return_value = []
+            rwa = RWA(rpc_url="http://fake")
+
+        assert len(rwa._adapters) == 5
+
+    def test_empty_adapters_list_is_accepted(self):
+        with patch("rwa_sdk.client.create_provider"):
+            rwa = RWA(rpc_url="http://fake", adapters=[])
+
+        assert rwa._adapters == []
+
+
 class TestBalanceOf:
     def test_balance_of_resolves_symbol_and_delegates_to_erc20(self, rwa):
         usdy = _make_token("USDY", "0x96F6eF951840721AdBF46Ac996b59E0235CB985C", "ondo")

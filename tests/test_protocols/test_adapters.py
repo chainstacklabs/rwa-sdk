@@ -81,7 +81,9 @@ class TestBackedAdapter:
         mock_contract.functions.totalSupply.return_value.call.return_value = 1000 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "bIB01"
         mock_contract.functions.name.return_value.call.return_value = "Backed IB01"
-        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, 100 * 10**8, 0, FRESH_TS, 0)
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (
+            0, 100 * 10**8, 0, FRESH_TS, 0
+        )
         w3.eth.contract.return_value = mock_contract
 
         with patch("rwa_sdk.core.oracle.time") as mock_time:
@@ -149,7 +151,9 @@ class TestSecuritizeAdapter:
     def test_can_transfer_blocked(self, w3):
         adapter = SecuritizeAdapter(w3)
         mock_contract = MagicMock()
-        mock_contract.functions.preTransferCheck.return_value.call.return_value = (1, "not registered")
+        mock_contract.functions.preTransferCheck.return_value.call.return_value = (
+            1, "not registered"
+        )
         w3.eth.contract.return_value = mock_contract
 
         result = adapter.can_transfer(
@@ -187,7 +191,11 @@ class TestOndoAdapter:
         w3.eth.contract.return_value = mock_contract
 
         usdy_addr = "0x96F6eF951840721AdBF46Ac996b59E0235CB985C"
-        result = adapter.can_transfer(usdy_addr, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            usdy_addr,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert isinstance(result, ComplianceCheck)
         assert result.method == ComplianceMethod.BLOCKLIST
 
@@ -198,7 +206,11 @@ class TestOndoAdapter:
         w3.eth.contract.return_value = mock_contract
 
         ousg_addr = "0x1B19C19393e2d034D8Ff31ff34c81252FcBbee92"
-        result = adapter.can_transfer(ousg_addr, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            ousg_addr,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.method == ComplianceMethod.KYC_REGISTRY
 
     def test_can_transfer_usdy_blocked(self, w3):
@@ -208,7 +220,11 @@ class TestOndoAdapter:
         w3.eth.contract.return_value = mock_contract
 
         usdy_addr = "0x96F6eF951840721AdBF46Ac996b59E0235CB985C"
-        result = adapter.can_transfer(usdy_addr, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            usdy_addr,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.can_transfer is False
         assert "sender" in result.restriction_message
 
@@ -220,7 +236,9 @@ class TestOndoAdapter:
         mock_contract.functions.totalSupply.return_value.call.return_value = 1000 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "USDY"
         mock_contract.functions.name.return_value.call.return_value = "USDY"
-        mock_contract.functions.getPriceData.return_value.call.return_value = (1_02 * 10**16, FRESH_TS)  # $1.02
+        mock_contract.functions.getPriceData.return_value.call.return_value = (
+            1_02 * 10**16, FRESH_TS  # $1.02
+        )
         mock_contract.functions.getAssetPrice.return_value.call.return_value = 110 * 10**18  # $110
         w3.eth.contract.return_value = mock_contract
 
@@ -382,7 +400,9 @@ class TestCentrifugeAdapter:
         adapter = CentrifugeAdapter(w3)
         mock_contract = MagicMock()
         mock_contract.functions.detectTransferRestriction.return_value.call.return_value = 1
-        mock_contract.functions.messageForTransferRestriction.return_value.call.return_value = "not member"
+        mock_contract.functions.messageForTransferRestriction.return_value.call.return_value = (
+            "not member"
+        )
         w3.eth.contract.return_value = mock_contract
 
         result = adapter.can_transfer(
@@ -414,7 +434,9 @@ class TestCentrifugeAdapter:
         mock_contract.functions.decimals.return_value.call.return_value = 18
         mock_contract.functions.totalSupply.return_value.call.return_value = 500 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "JTRSY"
-        mock_contract.functions.name.return_value.call.return_value = "Janus Henderson Anemoy Treasury Fund"
+        mock_contract.functions.name.return_value.call.return_value = (
+            "Janus Henderson Anemoy Treasury Fund"
+        )
         w3.eth.contract.return_value = mock_contract
 
         stub_http = MagicMock()

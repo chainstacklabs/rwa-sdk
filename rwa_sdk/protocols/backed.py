@@ -1,17 +1,21 @@
 """Backed Finance adapter — bIB01, bCSPX, bNVDA."""
 
+import logging
+
 from web3 import Web3
 
 from rwa_sdk.core.abi import load_abi
-from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
     TokenInfo,
     YieldType,
 )
+from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_token_metadata
+
+_log = logging.getLogger(__name__)
 
 # Token metadata not available on-chain in a structured way
 _TOKEN_META = {
@@ -52,17 +56,21 @@ class BackedAdapter:
         return self._read_token("bnvda")
 
     def _read_token(self, token_key: str) -> TokenInfo:
+        """Read on-chain metadata and Chainlink price for a Backed token by registry key."""
         addrs = self._addresses["tokens"][token_key]
         meta = read_token_metadata(self._w3, addrs["token"])
         token_meta = _TOKEN_META[token_key]
 
         price = None
         price_source = None
-        if addrs.get("chainlink_feed"):
+        feed_address = addrs.get("chainlink_feed")
+        if feed_address:
             price = self._read_chainlink_price(
-                addrs["chainlink_feed"], token_meta["feed_decimals"]
+                feed_address, token_meta["feed_decimals"]
             )
             price_source = "Chainlink latestRoundData()"
+        else:
+            _log.debug("No Chainlink feed configured for %s, price unavailable", token_key)
 
         tvl = meta["total_supply"] * price if price else None
 
@@ -84,6 +92,8 @@ class BackedAdapter:
     # --- Price ---
 
     def _read_chainlink_price(self, feed_address: str, decimals: int) -> float:
+        """Call Chainlink latestRoundData(), assert freshness, return price scaled by feed decimals.
+        """
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(feed_address),
             abi=load_abi("chainlink_aggregator"),
@@ -92,11 +102,19 @@ class BackedAdapter:
         answer = result[1]  # (roundId, answer, startedAt, updatedAt, answeredInRound)
         updated_at = result[3]
         assert_price_fresh(updated_at)
-        return answer / (10**decimals)
+        price = answer / (10**decimals)
+        _log.debug(
+            "Chainlink price fetched for %s: %.6f (updated_at=%d)",
+            feed_address,
+            price,
+            updated_at,
+        )
+        return price
 
     # --- Compliance ---
 
     def _is_sanctioned(self, address: str) -> bool:
+        """Return True if address appears on the Chainalysis on-chain sanctions list."""
         sanctions_addr = self._addresses["shared"].get("sanctions_list")
         if not sanctions_addr:
             return False

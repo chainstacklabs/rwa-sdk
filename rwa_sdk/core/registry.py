@@ -1,11 +1,39 @@
 """Contract address and metadata registry per chain."""
 
+from typing import TypedDict, cast
+
 # Chain IDs
 ETHEREUM = 1
 ARBITRUM = 42161
 POLYGON = 137
 AVALANCHE = 43114
 BASE = 8453
+
+
+class _TokenAddressesBase(TypedDict):
+    """Required fields present in every token entry."""
+
+    token: str
+
+
+class _TokenAddresses(_TokenAddressesBase, total=False):
+    """Address entries for a single token. Only `token` is guaranteed present."""
+
+    oracle: str
+    blocklist: str
+    kyc_registry: str
+    chainlink_feed: str
+    pool: str
+    pool_manager: str
+    pool_id: str
+
+
+class _ChainAddresses(TypedDict):
+    """Registry entry for one protocol on one chain."""
+
+    tokens: dict[str, _TokenAddresses]
+    shared: dict[str, str | None]
+
 
 # Ondo Finance
 ONDO = {
@@ -89,7 +117,6 @@ BACKED = {
             },
             "bcspx": {
                 "token": "0x1e2c4fb7ede391d116e6b41cd0608260e8801d59",
-                "chainlink_feed": None,  # CSPX/USD feed TBD
             },
             "bnvda": {
                 "token": "0xa34c5e0abe843e10461e2c9586ea03e55dbcc495",
@@ -122,10 +149,13 @@ MAPLE = {
     ETHEREUM: {
         "tokens": {
             "syrup_usdc": {
+                # ERC-4626: pool IS the token — both keys share the same address
+                "token": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
                 "pool": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
                 "pool_manager": "0x7aD5fFa5fdF509E30186F4609c2f6269f4B6158F",
             },
             "syrup_usdt": {
+                "token": "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
                 "pool": "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
             },
         },
@@ -137,7 +167,7 @@ MAPLE = {
 }
 
 
-def get_addresses(protocol: str, chain_id: int = ETHEREUM) -> dict:
+def get_addresses(protocol: str, chain_id: int = ETHEREUM) -> _ChainAddresses:
     """Get contract addresses for a protocol on a given chain.
 
     Raises:
@@ -154,9 +184,9 @@ def get_addresses(protocol: str, chain_id: int = ETHEREUM) -> dict:
     }
     if protocol not in registries:
         raise RegistryError(f"Unknown protocol: {protocol!r}")
-    addresses = registries[protocol].get(chain_id)
-    if addresses is None:
+    raw = registries[protocol].get(chain_id)
+    if raw is None:
         raise RegistryError(
             f"Protocol {protocol!r} is not deployed on chain {chain_id}"
         )
-    return addresses
+    return cast(_ChainAddresses, raw)

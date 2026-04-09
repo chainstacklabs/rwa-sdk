@@ -1,8 +1,11 @@
 """Maple Finance adapter — syrupUSDC, syrupUSDT."""
 
+import logging
+
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
+from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
@@ -13,13 +16,15 @@ from rwa_sdk.core.models import (
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_balance
 
+_log = logging.getLogger(__name__)
 
 _POOLS = {
     "syrup_usdc": {"name": "Maple syrupUSDC", "category": "private-credit"},
     "syrup_usdt": {"name": "Maple syrupUSDT", "category": "private-credit"},
 }
 
-_LEND_FUNCTION_ID: bytes = b"P:lend" + b"\x00" * 26  # bytes32("P:lend") — Solidity bytes32 literals are right-padded with zeros
+# bytes32("P:lend") — Solidity bytes32 literals are right-padded with zeros
+_LEND_FUNCTION_ID: bytes = b"P:lend" + b"\x00" * 26
 
 
 class MapleAdapter:
@@ -49,7 +54,9 @@ class MapleAdapter:
     def pool_info(self, pool_key: str = "syrup_usdc") -> PoolInfo:
         """Get detailed pool info for a Maple pool."""
         addrs = self._addresses["tokens"][pool_key]
-        pool_addr = addrs["pool"]
+        pool_addr = addrs.get("pool")
+        if pool_addr is None:
+            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
         contract = self._get_pool_contract(pool_addr)
 
         decimals = contract.functions.decimals().call()
@@ -78,7 +85,10 @@ class MapleAdapter:
     def share_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get current share price (gross, before unrealized losses)."""
         addrs = self._addresses["tokens"][pool_key]
-        contract = self._get_pool_contract(addrs["pool"])
+        pool_addr = addrs.get("pool")
+        if pool_addr is None:
+            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
+        contract = self._get_pool_contract(pool_addr)
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
         raw = contract.functions.convertToAssets(one_share).call()
@@ -87,7 +97,10 @@ class MapleAdapter:
     def exit_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get net share price (deducts unrealized losses)."""
         addrs = self._addresses["tokens"][pool_key]
-        contract = self._get_pool_contract(addrs["pool"])
+        pool_addr = addrs.get("pool")
+        if pool_addr is None:
+            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
+        contract = self._get_pool_contract(pool_addr)
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
         raw = contract.functions.convertToExitAssets(one_share).call()
@@ -111,6 +124,9 @@ class MapleAdapter:
         pm_contract_addr = self._addresses.get("shared", {}).get("pool_permission_manager")
 
         if not pool_manager_addr or not pm_contract_addr:
+            _log.debug(
+                "Maple compliance skipped for %s: no PoolPermissionManager configured", pool_key
+            )
             return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
 
         contract = self._w3.eth.contract(
@@ -142,8 +158,11 @@ class MapleAdapter:
         return ComplianceCheck(can_transfer=True, method=ComplianceMethod.BITMAP)
 
     def _read_pool_token(self, pool_key: str) -> TokenInfo:
+        """Read ERC-4626 pool contract to build TokenInfo with share price and TVL."""
         addrs = self._addresses["tokens"][pool_key]
-        pool_addr = addrs["pool"]
+        pool_addr = addrs.get("pool")
+        if pool_addr is None:
+            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
         contract = self._get_pool_contract(pool_addr)
         meta = _POOLS[pool_key]
 
@@ -155,6 +174,7 @@ class MapleAdapter:
         total_assets = total_assets_raw / one_share
         share_price_raw = contract.functions.convertToAssets(one_share).call()
         share_price = share_price_raw / one_share
+        _log.debug("Maple %s share price: %.6f", pool_key, share_price)
 
         return TokenInfo(
             symbol=contract.functions.symbol().call(),
@@ -172,6 +192,7 @@ class MapleAdapter:
         )
 
     def _get_pool_contract(self, address: str):
+        """Instantiate the pool contract with ERC-20 + ERC-4626 + Maple ABIs."""
         return self._w3.eth.contract(
             address=Web3.to_checksum_address(address),
             abi=combined_abi("erc20", "erc4626", "maple_pool"),

@@ -26,4 +26,6 @@ def assert_price_fresh(timestamp: int, max_age_seconds: int = 3600) -> None:
         raise ValueError(f"timestamp {timestamp} is in the future (now={now})")
     age = now - timestamp
     if age > max_age_seconds:
-        raise OracleStalenessError(timestamp=timestamp, age_seconds=age, max_age_seconds=max_age_seconds)
+        raise OracleStalenessError(
+            timestamp=timestamp, age_seconds=age, max_age_seconds=max_age_seconds
+        )

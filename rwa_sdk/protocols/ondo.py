@@ -1,17 +1,22 @@
 """Ondo Finance adapter — USDY, OUSG, rUSDY, rOUSG."""
 
+import logging
+
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
-from rwa_sdk.core.oracle import assert_price_fresh
+from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
     TokenInfo,
     YieldType,
 )
+from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_token_metadata
+
+_log = logging.getLogger(__name__)
 
 
 class OndoAdapter:
@@ -36,7 +41,10 @@ class OndoAdapter:
         """Get USDY token info with current price from oracle."""
         addrs = self._addresses["tokens"]["usdy"]
         meta = read_token_metadata(self._w3, addrs["token"])
-        price = self._read_usdy_price(addrs["oracle"])
+        oracle = addrs.get("oracle")
+        if oracle is None:
+            raise RegistryError(f"No oracle registered for 'usdy' on chain {self._chain_id}")
+        price = self._read_usdy_price(oracle)
         tvl = meta["total_supply"] * price if price else None
 
         return TokenInfo(
@@ -56,16 +64,22 @@ class OndoAdapter:
 
     def usdy_price(self) -> float:
         """Get current USDY price from oracle (18 decimals)."""
-        return self._read_usdy_price(self._addresses["tokens"]["usdy"]["oracle"])
+        oracle = self._addresses["tokens"]["usdy"].get("oracle")
+        if oracle is None:
+            raise RegistryError(f"No oracle registered for 'usdy' on chain {self._chain_id}")
+        return self._read_usdy_price(oracle)
 
     def _read_usdy_price(self, oracle_address: str) -> float:
+        """Call RWADynamicOracle.getPriceData(), assert freshness, return price as float."""
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(oracle_address),
             abi=load_abi("ondo_oracle"),
         )
         price_raw, updated_at = contract.functions.getPriceData().call()
         assert_price_fresh(updated_at)
-        return price_raw / 10**18
+        price = price_raw / 10**18
+        _log.debug("USDY price fetched: %.6f (updated_at=%d)", price, updated_at)
+        return price
 
     # --- OUSG ---
 
@@ -73,7 +87,10 @@ class OndoAdapter:
         """Get OUSG token info with current price from oracle."""
         addrs = self._addresses["tokens"]["ousg"]
         meta = read_token_metadata(self._w3, addrs["token"])
-        price = self._read_ousg_price(addrs["oracle"], addrs["token"])
+        oracle = addrs.get("oracle")
+        if oracle is None:
+            raise RegistryError(f"No oracle registered for 'ousg' on chain {self._chain_id}")
+        price = self._read_ousg_price(oracle, addrs["token"])
         tvl = meta["total_supply"] * price if price else None
 
         return TokenInfo(
@@ -94,11 +111,16 @@ class OndoAdapter:
     def ousg_price(self) -> float:
         """Get current OUSG price from oracle (18 decimals)."""
         addrs = self._addresses["tokens"]["ousg"]
-        return self._read_ousg_price(addrs["oracle"], addrs["token"])
+        oracle = addrs.get("oracle")
+        if oracle is None:
+            raise RegistryError(f"No oracle registered for 'ousg' on chain {self._chain_id}")
+        return self._read_ousg_price(oracle, addrs["token"])
 
     def _read_ousg_price(self, oracle_address: str, token_address: str) -> float:
-        # OndoOracle.getAssetPrice() returns only the price — no timestamp is
-        # exposed by this contract, so staleness cannot be checked on-chain.
+        """Call OndoOracle.getAssetPrice() for the given token.
+
+        No timestamp is exposed by this oracle so staleness cannot be checked on-chain.
+        """
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(oracle_address),
             abi=load_abi("ondo_ousg_oracle"),
@@ -106,7 +128,9 @@ class OndoAdapter:
         raw = contract.functions.getAssetPrice(
             Web3.to_checksum_address(token_address)
         ).call()
-        return raw / 10**18
+        price = raw / 10**18
+        _log.debug("OUSG price fetched: %.6f", price)
+        return price
 
     # --- rUSDY (rebasing wrapper) ---
 
@@ -195,8 +219,11 @@ class OndoAdapter:
     def is_blocked(self, address: str) -> bool:
         """Check if address is on the USDY blocklist."""
         addrs = self._addresses["tokens"]["usdy"]
+        blocklist = addrs.get("blocklist")
+        if blocklist is None:
+            raise RegistryError(f"No blocklist registered for 'usdy' on chain {self._chain_id}")
         contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(addrs["blocklist"]),
+            address=Web3.to_checksum_address(blocklist),
             abi=load_abi("ondo_blocklist"),
         )
         return contract.functions.isBlocked(
@@ -206,8 +233,11 @@ class OndoAdapter:
     def check_kyc(self, address: str, group: int = 0) -> bool:
         """Check KYC status for OUSG (requires KYC registry)."""
         addrs = self._addresses["tokens"]["ousg"]
+        kyc_registry = addrs.get("kyc_registry")
+        if kyc_registry is None:
+            raise RegistryError(f"No kyc_registry registered for 'ousg' on chain {self._chain_id}")
         contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(addrs["kyc_registry"]),
+            address=Web3.to_checksum_address(kyc_registry),
             abi=load_abi("ondo_kyc_registry"),
         )
         return contract.functions.getKYCStatus(
@@ -215,11 +245,13 @@ class OndoAdapter:
         ).call()
 
     def _can_transfer_usdy(self, from_addr: str, to_addr: str) -> ComplianceCheck:
+        """Check USDY blocklist for sender and receiver; return ComplianceCheck."""
         from_blocked = self.is_blocked(from_addr)
         to_blocked = self.is_blocked(to_addr)
 
         if from_blocked or to_blocked:
             who = "sender" if from_blocked else "receiver"
+            _log.warning("USDY transfer blocked: %s", who)
             return ComplianceCheck(
                 can_transfer=False,
                 restriction_code=1,
@@ -237,11 +269,13 @@ class OndoAdapter:
     def _can_transfer_ousg(
         self, from_addr: str, to_addr: str, group: int = 0
     ) -> ComplianceCheck:
+        """Check OUSG KYC registry for sender and receiver; return ComplianceCheck."""
         from_kyc = self.check_kyc(from_addr, group)
         to_kyc = self.check_kyc(to_addr, group)
 
         if not from_kyc or not to_kyc:
             who = "sender" if not from_kyc else "receiver"
+            _log.warning("OUSG transfer blocked (KYC): %s", who)
             return ComplianceCheck(
                 can_transfer=False,
                 restriction_code=2,
