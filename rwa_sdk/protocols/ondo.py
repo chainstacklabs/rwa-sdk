@@ -97,6 +97,8 @@ class OndoAdapter:
         return self._read_ousg_price(addrs["oracle"], addrs["token"])
 
     def _read_ousg_price(self, oracle_address: str, token_address: str) -> float:
+        # OndoOracle.getAssetPrice() returns only the price — no timestamp is
+        # exposed by this contract, so staleness cannot be checked on-chain.
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(oracle_address),
             abi=load_abi("ondo_ousg_oracle"),

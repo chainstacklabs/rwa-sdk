@@ -131,14 +131,6 @@ class BackedAdapter:
             method=ComplianceMethod.SANCTIONS,
         )
 
-    def _is_paused(self, token_key: str) -> bool:
-        addrs = self._addresses["tokens"][token_key]
-        contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(addrs["token"]),
-            abi=load_abi("backed_token"),
-        )
-        return contract.functions.isPaused().call()
-
     # --- Aggregation ---
 
     def all_tokens(self) -> list[TokenInfo]:

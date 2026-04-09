@@ -2,6 +2,7 @@
 
 import pytest
 
+from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.registry import get_addresses
 
 
@@ -30,9 +31,11 @@ def test_maple_globals_in_shared() -> None:
     assert "globals" in shared
 
 
-def test_unknown_protocol_returns_empty() -> None:
-    assert get_addresses("unknown") == {}
+def test_unknown_protocol_raises() -> None:
+    with pytest.raises(RegistryError, match="Unknown protocol"):
+        get_addresses("unknown")
 
 
-def test_unknown_chain_returns_empty() -> None:
-    assert get_addresses("backed", chain_id=999) == {}
+def test_unknown_chain_raises() -> None:
+    with pytest.raises(RegistryError, match="not deployed on chain"):
+        get_addresses("backed", chain_id=999)

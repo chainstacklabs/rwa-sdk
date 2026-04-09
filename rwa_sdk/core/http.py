@@ -39,7 +39,7 @@ class DefaultHttpClient:
         try:
             with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
                 return json.loads(resp.read().decode())
-        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+        except (urllib.error.URLError, json.JSONDecodeError) as exc:
             raise HttpError(url, exc) from exc
 
     def post_json(
@@ -55,5 +55,5 @@ class DefaultHttpClient:
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
                 return json.loads(resp.read().decode())
-        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+        except (urllib.error.URLError, json.JSONDecodeError) as exc:
             raise HttpError(url, exc) from exc

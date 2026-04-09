@@ -138,7 +138,13 @@ MAPLE = {
 
 
 def get_addresses(protocol: str, chain_id: int = ETHEREUM) -> dict:
-    """Get contract addresses for a protocol on a given chain."""
+    """Get contract addresses for a protocol on a given chain.
+
+    Raises:
+        RegistryError: If the protocol or chain_id is not registered.
+    """
+    from rwa_sdk.core.exceptions import RegistryError
+
     registries = {
         "ondo": ONDO,
         "securitize": SECURITIZE,
@@ -146,5 +152,11 @@ def get_addresses(protocol: str, chain_id: int = ETHEREUM) -> dict:
         "centrifuge": CENTRIFUGE,
         "maple": MAPLE,
     }
-    registry = registries.get(protocol, {})
-    return registry.get(chain_id, {})
+    if protocol not in registries:
+        raise RegistryError(f"Unknown protocol: {protocol!r}")
+    addresses = registries[protocol].get(chain_id)
+    if addresses is None:
+        raise RegistryError(
+            f"Protocol {protocol!r} is not deployed on chain {chain_id}"
+        )
+    return addresses

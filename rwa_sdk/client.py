@@ -34,9 +34,7 @@ class RWA:
             CentrifugeAdapter(self._w3, chain_id),
         ]
 
-    # ------------------------------------------------------------------
-    # Backwards-compatible named accessors
-    # ------------------------------------------------------------------
+    # --- Named accessors ---
 
     @property
     def ondo(self) -> ProtocolAdapter:
@@ -63,9 +61,7 @@ class RWA:
         """Access the underlying Web3 instance."""
         return self._w3
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    # --- Public API ---
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all supported tokens across all registered adapters."""
@@ -101,9 +97,7 @@ class RWA:
         address = self._resolve_token_address(symbol)
         return erc20.read_balance(self._w3, address, wallet)
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+    # --- Internal helpers ---
 
     def _adapter_by_protocol(self, protocol: str) -> ProtocolAdapter:
         for adapter in self._adapters:
