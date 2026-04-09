@@ -11,7 +11,6 @@ from rwa_sdk.core.models import (
 )
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
 
-
 _TOKENS = {
     "buidl": {"name": "BlackRock BUIDL", "category": "us-treasury"},
     "buidl_i": {"name": "BlackRock BUIDL-I", "category": "us-treasury"},

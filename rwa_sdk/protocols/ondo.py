@@ -3,13 +3,13 @@
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
-from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
     TokenInfo,
     YieldType,
 )
+from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_token_metadata
 

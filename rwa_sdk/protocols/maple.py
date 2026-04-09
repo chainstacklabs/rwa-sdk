@@ -13,13 +13,13 @@ from rwa_sdk.core.models import (
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_balance
 
-
 _POOLS = {
     "syrup_usdc": {"name": "Maple syrupUSDC", "category": "private-credit"},
     "syrup_usdt": {"name": "Maple syrupUSDT", "category": "private-credit"},
 }
 
-_LEND_FUNCTION_ID: bytes = b"P:lend" + b"\x00" * 26  # bytes32("P:lend") — Solidity bytes32 literals are right-padded with zeros
+# bytes32("P:lend") — Solidity bytes32 literals are right-padded with zeros
+_LEND_FUNCTION_ID: bytes = b"P:lend" + b"\x00" * 26
 
 
 class MapleAdapter:
