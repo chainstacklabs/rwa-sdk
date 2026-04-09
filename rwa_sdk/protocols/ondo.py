@@ -1,10 +1,9 @@
 """Ondo Finance adapter — USDY, OUSG, rUSDY, rOUSG."""
 
-from typing import cast
-
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
+from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
@@ -38,7 +37,10 @@ class OndoAdapter:
         """Get USDY token info with current price from oracle."""
         addrs = self._addresses["tokens"]["usdy"]
         meta = read_token_metadata(self._w3, addrs["token"])
-        price = self._read_usdy_price(cast(str, addrs.get("oracle")))
+        oracle = addrs.get("oracle")
+        if oracle is None:
+            raise RegistryError(f"No oracle registered for 'usdy' on chain {self._chain_id}")
+        price = self._read_usdy_price(oracle)
         tvl = meta["total_supply"] * price if price else None
 
         return TokenInfo(
@@ -58,7 +60,10 @@ class OndoAdapter:
 
     def usdy_price(self) -> float:
         """Get current USDY price from oracle (18 decimals)."""
-        return self._read_usdy_price(cast(str, self._addresses["tokens"]["usdy"].get("oracle")))
+        oracle = self._addresses["tokens"]["usdy"].get("oracle")
+        if oracle is None:
+            raise RegistryError(f"No oracle registered for 'usdy' on chain {self._chain_id}")
+        return self._read_usdy_price(oracle)
 
     def _read_usdy_price(self, oracle_address: str) -> float:
         contract = self._w3.eth.contract(
@@ -75,7 +80,10 @@ class OndoAdapter:
         """Get OUSG token info with current price from oracle."""
         addrs = self._addresses["tokens"]["ousg"]
         meta = read_token_metadata(self._w3, addrs["token"])
-        price = self._read_ousg_price(cast(str, addrs.get("oracle")), addrs["token"])
+        oracle = addrs.get("oracle")
+        if oracle is None:
+            raise RegistryError(f"No oracle registered for 'ousg' on chain {self._chain_id}")
+        price = self._read_ousg_price(oracle, addrs["token"])
         tvl = meta["total_supply"] * price if price else None
 
         return TokenInfo(
@@ -96,7 +104,10 @@ class OndoAdapter:
     def ousg_price(self) -> float:
         """Get current OUSG price from oracle (18 decimals)."""
         addrs = self._addresses["tokens"]["ousg"]
-        return self._read_ousg_price(cast(str, addrs.get("oracle")), addrs["token"])
+        oracle = addrs.get("oracle")
+        if oracle is None:
+            raise RegistryError(f"No oracle registered for 'ousg' on chain {self._chain_id}")
+        return self._read_ousg_price(oracle, addrs["token"])
 
     def _read_ousg_price(self, oracle_address: str, token_address: str) -> float:
         # OndoOracle.getAssetPrice() returns only the price — no timestamp is
@@ -197,8 +208,11 @@ class OndoAdapter:
     def is_blocked(self, address: str) -> bool:
         """Check if address is on the USDY blocklist."""
         addrs = self._addresses["tokens"]["usdy"]
+        blocklist = addrs.get("blocklist")
+        if blocklist is None:
+            raise RegistryError(f"No blocklist registered for 'usdy' on chain {self._chain_id}")
         contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(cast(str, addrs.get("blocklist"))),
+            address=Web3.to_checksum_address(blocklist),
             abi=load_abi("ondo_blocklist"),
         )
         return contract.functions.isBlocked(
@@ -208,8 +222,11 @@ class OndoAdapter:
     def check_kyc(self, address: str, group: int = 0) -> bool:
         """Check KYC status for OUSG (requires KYC registry)."""
         addrs = self._addresses["tokens"]["ousg"]
+        kyc_registry = addrs.get("kyc_registry")
+        if kyc_registry is None:
+            raise RegistryError(f"No kyc_registry registered for 'ousg' on chain {self._chain_id}")
         contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(cast(str, addrs.get("kyc_registry"))),
+            address=Web3.to_checksum_address(kyc_registry),
             abi=load_abi("ondo_kyc_registry"),
         )
         return contract.functions.getKYCStatus(

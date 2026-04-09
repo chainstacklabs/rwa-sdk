@@ -1,10 +1,9 @@
 """Maple Finance adapter — syrupUSDC, syrupUSDT."""
 
-from typing import cast
-
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
+from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
@@ -51,7 +50,9 @@ class MapleAdapter:
     def pool_info(self, pool_key: str = "syrup_usdc") -> PoolInfo:
         """Get detailed pool info for a Maple pool."""
         addrs = self._addresses["tokens"][pool_key]
-        pool_addr = cast(str, addrs.get("pool"))
+        pool_addr = addrs.get("pool")
+        if pool_addr is None:
+            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
         contract = self._get_pool_contract(pool_addr)
 
         decimals = contract.functions.decimals().call()
@@ -80,7 +81,10 @@ class MapleAdapter:
     def share_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get current share price (gross, before unrealized losses)."""
         addrs = self._addresses["tokens"][pool_key]
-        contract = self._get_pool_contract(cast(str, addrs.get("pool")))
+        pool_addr = addrs.get("pool")
+        if pool_addr is None:
+            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
+        contract = self._get_pool_contract(pool_addr)
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
         raw = contract.functions.convertToAssets(one_share).call()
@@ -89,7 +93,10 @@ class MapleAdapter:
     def exit_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get net share price (deducts unrealized losses)."""
         addrs = self._addresses["tokens"][pool_key]
-        contract = self._get_pool_contract(cast(str, addrs.get("pool")))
+        pool_addr = addrs.get("pool")
+        if pool_addr is None:
+            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
+        contract = self._get_pool_contract(pool_addr)
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
         raw = contract.functions.convertToExitAssets(one_share).call()
@@ -145,7 +152,9 @@ class MapleAdapter:
 
     def _read_pool_token(self, pool_key: str) -> TokenInfo:
         addrs = self._addresses["tokens"][pool_key]
-        pool_addr = cast(str, addrs.get("pool"))
+        pool_addr = addrs.get("pool")
+        if pool_addr is None:
+            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
         contract = self._get_pool_contract(pool_addr)
         meta = _POOLS[pool_key]
 
