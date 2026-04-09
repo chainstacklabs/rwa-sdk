@@ -8,6 +8,7 @@ from rwa_sdk.infra.abi import combined_abi, load_abi
 from rwa_sdk.core.chain import Chain
 from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.models import (
+    Category,
     ComplianceCheck,
     ComplianceMethod,
     TokenInfo,
@@ -27,6 +28,7 @@ class OndoToken:
     oracle: str | None = None
     blocklist: str | None = None
     kyc_registry: str | None = None
+    category: str = "us-treasury"
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,9 @@ class OndoAdapter:
     """Read-only adapter for Ondo Finance RWA tokens."""
 
     protocol = "ondo"
+
+    # Keys whose tokens rebase rather than accumulate price
+    _REBASING_KEYS: ClassVar[frozenset[str]] = frozenset({"rusdy", "rousg"})
 
     config: ClassVar[dict[Chain, OndoConfig]] = {
         Chain.ETHEREUM: OndoConfig(tokens={
@@ -55,9 +60,6 @@ class OndoAdapter:
             ),
             "rousg": OndoToken(token="0x54043c656F0FAd0652D9Ae2603cDF347c5578d00"),
         }),
-        Chain.ARBITRUM: OndoConfig(tokens={
-            "usdy": OndoToken(token="0x35e050d3C0eC2d29D269a8EcEa763a183bDF9A9D"),
-        }),
     }
 
     def __init__(self, chain: EVMChainService):
@@ -72,31 +74,9 @@ class OndoAdapter:
     def chain_id(self) -> int:
         return self._chain_id
 
-    # --- USDY ---
-
     def usdy(self) -> TokenInfo:
         """Get USDY token info with current price from oracle."""
-        token = self._config.tokens["usdy"]
-        meta = read_token_metadata(self._chain, token.token)
-        if token.oracle is None:
-            raise RegistryError(f"No oracle registered for 'usdy' on chain {self._chain_id}")
-        price = self._read_usdy_price(token.oracle)
-        tvl = meta["total_supply"] * price if price else None
-
-        return TokenInfo(
-            symbol=meta["symbol"],
-            name=meta["name"],
-            address=token.token,
-            chain_id=self._chain_id,
-            decimals=meta["decimals"],
-            total_supply=meta["total_supply"],
-            price=price,
-            price_source="RWADynamicOracle.getPriceData()",
-            tvl=tvl,
-            yield_type=YieldType.ACCUMULATING,
-            protocol="ondo",
-            category="us-treasury",
-        )
+        return self._read_token("usdy")
 
     def usdy_price(self) -> float:
         """Get current USDY price from oracle (18 decimals)."""
@@ -105,39 +85,9 @@ class OndoAdapter:
             raise RegistryError(f"No oracle registered for 'usdy' on chain {self._chain_id}")
         return self._read_usdy_price(token.oracle)
 
-    def _read_usdy_price(self, oracle_address: str) -> float:
-        contract = self._chain.get_contract(oracle_address, load_abi("ondo_oracle"))
-        price_raw, updated_at = contract.functions.getPriceData().call()
-        assert_price_fresh(updated_at)
-        price = price_raw / 10**18
-        _log.debug("USDY price fetched: %.6f (updated_at=%d)", price, updated_at)
-        return price
-
-    # --- OUSG ---
-
     def ousg(self) -> TokenInfo:
         """Get OUSG token info with current price from oracle."""
-        token = self._config.tokens["ousg"]
-        meta = read_token_metadata(self._chain, token.token)
-        if token.oracle is None:
-            raise RegistryError(f"No oracle registered for 'ousg' on chain {self._chain_id}")
-        price = self._read_ousg_price(token.oracle, token.token)
-        tvl = meta["total_supply"] * price if price else None
-
-        return TokenInfo(
-            symbol=meta["symbol"],
-            name=meta["name"],
-            address=token.token,
-            chain_id=self._chain_id,
-            decimals=meta["decimals"],
-            total_supply=meta["total_supply"],
-            price=price,
-            price_source="OndoOracle.getAssetPrice()",
-            tvl=tvl,
-            yield_type=YieldType.ACCUMULATING,
-            protocol="ondo",
-            category="us-treasury",
-        )
+        return self._read_token("ousg")
 
     def ousg_price(self) -> float:
         """Get current OUSG price from oracle (18 decimals)."""
@@ -146,36 +96,9 @@ class OndoAdapter:
             raise RegistryError(f"No oracle registered for 'ousg' on chain {self._chain_id}")
         return self._read_ousg_price(token.oracle, token.token)
 
-    def _read_ousg_price(self, oracle_address: str, token_address: str) -> float:
-        contract = self._chain.get_contract(oracle_address, load_abi("ondo_ousg_oracle"))
-        raw = contract.functions.getAssetPrice(
-            self._chain.checksum(token_address)
-        ).call()
-        price = raw / 10**18
-        _log.debug("OUSG price fetched: %.6f", price)
-        return price
-
-    # --- rUSDY (rebasing wrapper) ---
-
     def rusdy(self) -> TokenInfo:
         """Get rUSDY rebasing token info."""
-        token = self._config.tokens["rusdy"]
-        meta = read_token_metadata(self._chain, token.token)
-
-        return TokenInfo(
-            symbol=meta["symbol"],
-            name=meta["name"],
-            address=token.token,
-            chain_id=self._chain_id,
-            decimals=meta["decimals"],
-            total_supply=meta["total_supply"],
-            price=1.0,  # Rebasing ≈ $1
-            price_source="rebasing (balance adjusts)",
-            tvl=meta["total_supply"],
-            yield_type=YieldType.REBASING,
-            protocol="ondo",
-            category="us-treasury",
-        )
+        return self._read_token("rusdy")
 
     def rusdy_shares(self, holder: str) -> dict:
         """Get underlying shares for an rUSDY holder."""
@@ -192,29 +115,9 @@ class OndoAdapter:
             "balance": balance / 10**18,
         }
 
-    # --- rOUSG (rebasing wrapper) ---
-
     def rousg(self) -> TokenInfo:
         """Get rOUSG rebasing token info."""
-        token = self._config.tokens["rousg"]
-        meta = read_token_metadata(self._chain, token.token)
-
-        return TokenInfo(
-            symbol=meta["symbol"],
-            name=meta["name"],
-            address=token.token,
-            chain_id=self._chain_id,
-            decimals=meta["decimals"],
-            total_supply=meta["total_supply"],
-            price=1.0,
-            price_source="rebasing (balance adjusts)",
-            tvl=meta["total_supply"],
-            yield_type=YieldType.REBASING,
-            protocol="ondo",
-            category="us-treasury",
-        )
-
-    # --- Compliance ---
+        return self._read_token("rousg")
 
     def can_transfer(
         self, token_address: str, from_addr: str, to_addr: str, _value: int = 0
@@ -223,16 +126,25 @@ class OndoAdapter:
         checksum = self._chain.checksum(token_address)
         tokens = self._config.tokens
 
-        usdy_addr = self._chain.checksum(tokens["usdy"].token) if "usdy" in tokens else None
-        ousg_addr = self._chain.checksum(tokens["ousg"].token) if "ousg" in tokens else None
+        ousg_group = {
+            self._chain.checksum(tokens[k].token)
+            for k in ("ousg", "rousg")
+            if k in tokens
+        }
+        usdy_group = {
+            self._chain.checksum(tokens[k].token)
+            for k in ("usdy", "rusdy")
+            if k in tokens
+        }
 
-        if checksum == usdy_addr:
+        if checksum in ousg_group:
+            token_key = next(k for k in ("ousg", "rousg") if k in tokens and self._chain.checksum(tokens[k].token) == checksum)
+            return self._can_transfer_ousg(from_addr, to_addr, token_key)
+
+        if checksum in usdy_group:
             return self._can_transfer_usdy(from_addr, to_addr)
-        if checksum == ousg_addr:
-            return self._can_transfer_ousg(from_addr, to_addr)
 
-        # rUSDY and rOUSG are rebasing wrappers — USDY compliance applies.
-        return self._can_transfer_usdy(from_addr, to_addr)
+        return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
 
     def is_blocked(self, address: str) -> bool:
         """Check if address is on the USDY blocklist."""
@@ -244,71 +156,128 @@ class OndoAdapter:
             self._chain.checksum(address)
         ).call()
 
-    def check_kyc(self, address: str, group: int = 0) -> bool:
-        """Check KYC status for OUSG (requires KYC registry)."""
+    def check_kyc(self, address: str, rwa_token: str | None = None) -> bool:
+        """Check registration in the OndoIDRegistry for OUSG/rOUSG.
+
+        Returns True if the address has a non-zero registered ID for the given
+        rwa_token (defaults to OUSG's token address).
+        """
         token = self._config.tokens["ousg"]
         if token.kyc_registry is None:
             raise RegistryError(f"No kyc_registry registered for 'ousg' on chain {self._chain_id}")
+        _rwa_token = rwa_token or token.token
         contract = self._chain.get_contract(token.kyc_registry, load_abi("ondo_kyc_registry"))
-        return contract.functions.getKYCStatus(
-            group, self._chain.checksum(address)
+        result = contract.functions.getRegisteredID(
+            self._chain.checksum(_rwa_token),
+            self._chain.checksum(address),
         ).call()
-
-    def _can_transfer_usdy(self, from_addr: str, to_addr: str) -> ComplianceCheck:
-        from_blocked = self.is_blocked(from_addr)
-        to_blocked = self.is_blocked(to_addr)
-
-        if from_blocked or to_blocked:
-            who = "sender" if from_blocked else "receiver"
-            _log.warning("USDY transfer blocked: %s", who)
-            return ComplianceCheck(
-                can_transfer=False,
-                restriction_code=1,
-                restriction_message=f"{who} is on the blocklist",
-                method=ComplianceMethod.BLOCKLIST,
-            )
-
-        return ComplianceCheck(
-            can_transfer=True,
-            restriction_code=0,
-            restriction_message="",
-            method=ComplianceMethod.BLOCKLIST,
-        )
-
-    def _can_transfer_ousg(
-        self, from_addr: str, to_addr: str, group: int = 0
-    ) -> ComplianceCheck:
-        from_kyc = self.check_kyc(from_addr, group)
-        to_kyc = self.check_kyc(to_addr, group)
-
-        if not from_kyc or not to_kyc:
-            who = "sender" if not from_kyc else "receiver"
-            _log.warning("OUSG transfer blocked (KYC): %s", who)
-            return ComplianceCheck(
-                can_transfer=False,
-                restriction_code=2,
-                restriction_message=f"{who} not KYC-verified",
-                method=ComplianceMethod.KYC_REGISTRY,
-            )
-
-        return ComplianceCheck(
-            can_transfer=True,
-            restriction_code=0,
-            restriction_message="",
-            method=ComplianceMethod.KYC_REGISTRY,
-        )
-
-    # --- Aggregation ---
+        return result != bytes(32)
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Ondo tokens on this chain."""
-        tokens = []
-        if "usdy" in self._config.tokens:
-            tokens.append(self.usdy())
-        if "ousg" in self._config.tokens:
-            tokens.append(self.ousg())
-        if "rusdy" in self._config.tokens:
-            tokens.append(self.rusdy())
-        if "rousg" in self._config.tokens:
-            tokens.append(self.rousg())
-        return tokens
+        return [self._read_token(key) for key in self._config.tokens]
+
+    def _read_token(self, key: str) -> TokenInfo:
+        token = self._config.tokens[key]
+        meta = read_token_metadata(self._chain, token.token)
+
+        if key in self._REBASING_KEYS:
+            return TokenInfo(
+                symbol=meta["symbol"],
+                name=meta["name"],
+                address=token.token,
+                chain_id=self._chain_id,
+                decimals=meta["decimals"],
+                total_supply=meta["total_supply"],
+                price=1.0,
+                price_source="rebasing (balance adjusts)",
+                tvl=meta["total_supply"],
+                yield_type=YieldType.REBASING,
+                protocol="ondo",
+                category=Category(token.category),
+            )
+
+        if token.oracle is None:
+            raise RegistryError(f"No oracle registered for {key!r} on chain {self._chain_id}")
+
+        if token.kyc_registry is not None:
+            price = self._read_ousg_price(token.oracle, token.token)
+            price_source = "OndoOracle.getAssetPrice()"
+        else:
+            price = self._read_usdy_price(token.oracle)
+            price_source = "RWADynamicOracle.getPriceData()"
+
+        return TokenInfo(
+            symbol=meta["symbol"],
+            name=meta["name"],
+            address=token.token,
+            chain_id=self._chain_id,
+            decimals=meta["decimals"],
+            total_supply=meta["total_supply"],
+            price=price,
+            price_source=price_source,
+            tvl=meta["total_supply"] * price,
+            yield_type=YieldType.ACCUMULATING,
+            protocol="ondo",
+            category=Category(token.category),
+        )
+
+    def _read_usdy_price(self, oracle_address: str) -> float:
+        contract = self._chain.get_contract(oracle_address, load_abi("ondo_oracle"))
+        price_raw, updated_at = contract.functions.getPriceData().call()
+        assert_price_fresh(updated_at)
+        price = price_raw / 10**18
+        _log.debug("USDY price fetched: %.6f (updated_at=%d)", price, updated_at)
+        return price
+
+    def _read_ousg_price(self, oracle_address: str, token_address: str) -> float:
+        contract = self._chain.get_contract(oracle_address, load_abi("ondo_ousg_oracle"))
+        raw = contract.functions.getAssetPrice(
+            self._chain.checksum(token_address)
+        ).call()
+        price = raw / 10**18
+        _log.debug("OUSG price fetched: %.6f", price)
+        return price
+
+    def _can_transfer_usdy(self, from_addr: str, to_addr: str) -> ComplianceCheck:
+        if self.is_blocked(from_addr):
+            _log.warning("USDY transfer blocked: sender")
+            return ComplianceCheck(
+                can_transfer=False,
+                restriction_code=1,
+                restriction_message="sender is on the blocklist",
+                method=ComplianceMethod.BLOCKLIST,
+                blocking_party="sender",
+            )
+        if self.is_blocked(to_addr):
+            _log.warning("USDY transfer blocked: receiver")
+            return ComplianceCheck(
+                can_transfer=False,
+                restriction_code=1,
+                restriction_message="receiver is on the blocklist",
+                method=ComplianceMethod.BLOCKLIST,
+                blocking_party="receiver",
+            )
+        return ComplianceCheck(can_transfer=True, method=ComplianceMethod.BLOCKLIST)
+
+    def _can_transfer_ousg(self, from_addr: str, to_addr: str, token_key: str = "ousg") -> ComplianceCheck:
+        rwa_token = self._config.tokens[token_key].token
+        if not self.check_kyc(from_addr, rwa_token):
+            _log.warning("OUSG transfer blocked (KYC): sender")
+            return ComplianceCheck(
+                can_transfer=False,
+                restriction_code=2,
+                restriction_message="sender not KYC-verified",
+                method=ComplianceMethod.KYC_REGISTRY,
+                blocking_party="sender",
+            )
+        if not self.check_kyc(to_addr, rwa_token):
+            _log.warning("OUSG transfer blocked (KYC): receiver")
+            return ComplianceCheck(
+                can_transfer=False,
+                restriction_code=2,
+                restriction_message="receiver not KYC-verified",
+                method=ComplianceMethod.KYC_REGISTRY,
+                blocking_party="receiver",
+            )
+        return ComplianceCheck(can_transfer=True, method=ComplianceMethod.KYC_REGISTRY)

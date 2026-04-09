@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from rwa_sdk.core.chain import Chain
 from rwa_sdk.core.exceptions import RegistryError
-from rwa_sdk.core.models import ComplianceCheck, ComplianceMethod, TokenInfo, YieldType
+from rwa_sdk.core.models import Category, ComplianceCheck, ComplianceMethod, TokenInfo, YieldType
 from rwa_sdk.infra.abi import combined_abi
 from rwa_sdk.infra.evm import EVMChainService
 from rwa_sdk.protocols.base import register
@@ -18,7 +18,7 @@ _log = logging.getLogger(__name__)
 class SecuritizeToken:
     token: str
     name: str
-    category: str
+    category: Category
 
 
 @dataclass(frozen=True)
@@ -34,17 +34,17 @@ class SecuritizeAdapter:
 
     config: ClassVar[dict[Chain, SecuritizeConfig]] = {
         Chain.ETHEREUM: SecuritizeConfig(tokens={
-            "buidl": SecuritizeToken(token="0x7712c34205737192402172409a8F7ccef8aA2AEc", name="BlackRock BUIDL", category="us-treasury"),
-            "buidl_i": SecuritizeToken(token="0x6a9DA2D710BB9B700acde7Cb81F10F1fF8C89041", name="BlackRock BUIDL-I", category="us-treasury"),
+            "buidl": SecuritizeToken(token="0x7712c34205737192402172409a8F7ccef8aA2AEc", name="BlackRock BUIDL", category=Category.US_TREASURY),
+            "buidl_i": SecuritizeToken(token="0x6a9DA2D710BB9B700acde7Cb81F10F1fF8C89041", name="BlackRock BUIDL-I", category=Category.US_TREASURY),
         }),
         Chain.ARBITRUM: SecuritizeConfig(tokens={
-            "buidl": SecuritizeToken(token="0xA6525Ae43eDCd03dC08E775774dCAbd3bb925872", name="BlackRock BUIDL", category="us-treasury"),
+            "buidl": SecuritizeToken(token="0xA6525Ae43eDCd03dC08E775774dCAbd3bb925872", name="BlackRock BUIDL", category=Category.US_TREASURY),
         }),
         Chain.AVALANCHE: SecuritizeConfig(tokens={
-            "buidl": SecuritizeToken(token="0x53FC82f14F009009b440a706e31c9021E1196A2F", name="BlackRock BUIDL", category="us-treasury"),
+            "buidl": SecuritizeToken(token="0x53FC82f14F009009b440a706e31c9021E1196A2F", name="BlackRock BUIDL", category=Category.US_TREASURY),
         }),
         Chain.POLYGON: SecuritizeConfig(tokens={
-            "buidl": SecuritizeToken(token="0x2893Ef551B6dD69F661Ac00F11D93E5Dc5Dc0e99", name="BlackRock BUIDL", category="us-treasury"),
+            "buidl": SecuritizeToken(token="0x2893Ef551B6dD69F661Ac00F11D93E5Dc5Dc0e99", name="BlackRock BUIDL", category=Category.US_TREASURY),
         }),
     }
 
@@ -68,17 +68,18 @@ class SecuritizeAdapter:
         """Get BUIDL-I token info."""
         return self._read_token("buidl_i")
 
-    def wallet_count(self, token_key: str = "buidl") -> int:
-        """Return the number of registered wallets for a BUIDL token."""
-        return self._get_contract(token_key).functions.walletCount().call()
-
-    def get_wallet_at(self, index: int, token_key: str = "buidl") -> str:
-        """Return the wallet address at the given registry index."""
-        return self._get_contract(token_key).functions.getWalletAt(index).call()
+    def list_wallets(self, token_key: str = "buidl") -> list[str]:
+        """Return all registered wallet addresses for a BUIDL token."""
+        contract = self._get_contract(token_key)
+        count = contract.functions.walletCount().call()
+        return [contract.functions.getWalletAt(i).call() for i in range(1, count + 1)]
 
     def can_transfer(self, token_address: str, from_addr: str, to_addr: str, value: int = 0) -> ComplianceCheck:
         """Check transfer eligibility via the DS Protocol preTransferCheck."""
-        token_key = self._resolve_token_key(token_address)
+        try:
+            token_key = self._resolve_token_key(token_address)
+        except ValueError:
+            return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
         return self._pre_transfer_check(from_addr, to_addr, value, token_key)
 
     def _pre_transfer_check(self, from_addr: str, to_addr: str, value: int, token_key: str = "buidl") -> ComplianceCheck:
@@ -89,11 +90,20 @@ class SecuritizeAdapter:
             value,
         ).call()
         _log.debug("BUIDL preTransferCheck: code=%d reason=%s", code, reason)
-        return ComplianceCheck(can_transfer=(code == 0), restriction_code=code, restriction_message=reason, method=ComplianceMethod.PRE_TRANSFER_CHECK)
-
-    def get_ds_service(self, service_id: int, token_key: str = "buidl") -> str:
-        """Return the DS Protocol service address for a given service ID."""
-        return self._get_contract(token_key).functions.getDSService(service_id).call()
+        blocking_party = None
+        if code != 0:
+            lower = reason.lower()
+            if "sender" in lower or "from" in lower:
+                blocking_party = "sender"
+            elif "receiver" in lower or "recipient" in lower or "to" in lower:
+                blocking_party = "receiver"
+        return ComplianceCheck(
+            can_transfer=(code == 0),
+            restriction_code=code,
+            restriction_message=reason,
+            method=ComplianceMethod.PRE_TRANSFER_CHECK,
+            blocking_party=blocking_party,
+        )
 
     def _read_token(self, token_key: str) -> TokenInfo:
         token = self._config.tokens[token_key]

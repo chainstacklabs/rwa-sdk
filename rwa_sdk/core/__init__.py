@@ -2,6 +2,7 @@
 
 from rwa_sdk.core.exceptions import HttpError, OracleStalenessError, RegistryError, RWASDKError
 from rwa_sdk.core.models import (
+    Category,
     ComplianceCheck,
     ComplianceMethod,
     PoolInfo,
@@ -11,6 +12,7 @@ from rwa_sdk.core.models import (
 from rwa_sdk.core.oracle import assert_price_fresh
 
 __all__ = [
+    "Category",
     "ComplianceCheck",
     "ComplianceMethod",
     "OracleStalenessError",

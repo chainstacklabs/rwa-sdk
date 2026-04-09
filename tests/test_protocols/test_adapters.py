@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from rwa_sdk.core.exceptions import OracleStalenessError
-from rwa_sdk.core.models import ComplianceCheck, ComplianceMethod
+from rwa_sdk.core.models import Category, ComplianceCheck, ComplianceMethod
 from rwa_sdk.protocols.backed import BackedAdapter
 from rwa_sdk.protocols.base import ProtocolAdapter
 from rwa_sdk.protocols.centrifuge import CentrifugeAdapter
@@ -55,6 +55,57 @@ class TestBackedAdapter:
         )
         assert result.can_transfer is False
         assert "sender" in result.restriction_message
+
+    def test_can_transfer_sender_sanctioned_sets_blocking_party(self, mock_chain):
+        adapter = BackedAdapter(mock_chain)
+        mock_contract = MagicMock()
+        mock_contract.functions.isSanctioned.return_value.call.side_effect = [True, False]
+        mock_chain.get_contract.return_value = mock_contract
+        result = adapter.can_transfer(
+            "0xCA30c93B02514f86d5C86a6e375E3A330B435Fb5",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.blocking_party == "sender"
+
+    def test_can_transfer_receiver_sanctioned_sets_blocking_party(self, mock_chain):
+        adapter = BackedAdapter(mock_chain)
+        mock_contract = MagicMock()
+        mock_contract.functions.isSanctioned.return_value.call.side_effect = [False, True]
+        mock_chain.get_contract.return_value = mock_contract
+        result = adapter.can_transfer(
+            "0xCA30c93B02514f86d5C86a6e375E3A330B435Fb5",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.blocking_party == "receiver"
+
+    def test_can_transfer_clean_has_no_blocking_party(self, mock_chain):
+        adapter = BackedAdapter(mock_chain)
+        mock_contract = MagicMock()
+        mock_contract.functions.isSanctioned.return_value.call.return_value = False
+        mock_chain.get_contract.return_value = mock_contract
+        result = adapter.can_transfer(
+            "0xCA30c93B02514f86d5C86a6e375E3A330B435Fb5",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.blocking_party is None
+
+    def test_token_category_is_enum(self, mock_chain):
+        FIXED_NOW = 1_750_000_000
+        FRESH_TS = FIXED_NOW - 30
+        mock_contract = MagicMock()
+        mock_contract.functions.decimals.return_value.call.return_value = 18
+        mock_contract.functions.totalSupply.return_value.call.return_value = 1000 * 10**18
+        mock_contract.functions.symbol.return_value.call.return_value = "bIB01"
+        mock_contract.functions.name.return_value.call.return_value = "Backed IB01"
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, 100 * 10**8, 0, FRESH_TS, 0)
+        mock_chain.get_contract.return_value = mock_contract
+        with patch("rwa_sdk.core.oracle.time") as mock_time:
+            mock_time.time.return_value = float(FIXED_NOW)
+            token = BackedAdapter(mock_chain).bib01()
+        assert token.category == Category.BOND_ETF
 
     def test_all_tokens_returns_list(self, mock_chain):
         FIXED_NOW = 1_750_000_000
@@ -127,7 +178,21 @@ class TestSecuritizeAdapter:
         )
         assert result.can_transfer is False
         assert result.restriction_code == 1
-        assert result.restriction_message == "not registered"
+
+    def test_list_wallets(self, mock_chain):
+        adapter = SecuritizeAdapter(mock_chain)
+        mock_contract = MagicMock()
+        wallets = [
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        ]
+        mock_contract.functions.walletCount.return_value.call.return_value = len(wallets)
+        mock_contract.functions.getWalletAt.side_effect = lambda i: MagicMock(call=MagicMock(return_value=wallets[i - 1]))
+        mock_chain.get_contract.return_value = mock_contract
+
+        result = adapter.list_wallets()
+
+        assert result == wallets
 
     def test_all_tokens_returns_list(self, mock_chain):
         mock_contract = MagicMock()
@@ -266,6 +331,11 @@ class TestMapleAdapter:
         assert result.can_transfer is True
         assert result.method == ComplianceMethod.NONE
 
+    def test_list_pools_returns_configured_keys(self, mock_chain):
+        adapter = MapleAdapter(mock_chain)
+        pools = adapter.list_pools()
+        assert pools == ["syrup_usdc", "syrup_usdt"]
+
     def test_all_tokens_returns_list(self, mock_chain):
         mock_contract = MagicMock()
         mock_contract.functions.decimals.return_value.call.return_value = 6
@@ -302,6 +372,15 @@ class TestCentrifugeAdapter:
         assert result.can_transfer is False
         assert result.restriction_message == "not member"
 
+    def test_can_transfer_rpc_failure_raises(self, mock_chain):
+        mock_chain.checksum.side_effect = lambda x: x
+        adapter = CentrifugeAdapter(mock_chain)
+        mock_contract = MagicMock()
+        mock_contract.functions.detectTransferRestriction.return_value.call.side_effect = RuntimeError("connection refused")
+        mock_chain.get_contract.return_value = mock_contract
+        with pytest.raises(RuntimeError, match="connection refused"):
+            adapter.can_transfer("0x8c213ee79581ff4984583c6a801e5263418c4b86", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B", 100)
+
     def test_graphql_uses_injected_http(self, mock_chain):
         stub_http = MagicMock()
         stub_http.post_json.return_value = {"data": {"tokens": {"items": []}}}
@@ -328,3 +407,76 @@ class TestCentrifugeAdapter:
         tokens = CentrifugeAdapter(mock_chain, http=stub_http).all_tokens()
         assert len(tokens) == 1
         assert tokens[0].protocol == "centrifuge"
+
+    def test_api_unavailable_returns_token_with_null_price(self, mock_chain):
+        """API failure must produce price=None, not crash."""
+        mock_contract = MagicMock()
+        mock_contract.functions.decimals.return_value.call.return_value = 18
+        mock_contract.functions.totalSupply.return_value.call.return_value = 500 * 10**18
+        mock_contract.functions.symbol.return_value.call.return_value = "JTRSY"
+        mock_contract.functions.name.return_value.call.return_value = "Janus Henderson Anemoy Treasury Fund"
+        mock_chain.get_contract.return_value = mock_contract
+        stub_http = MagicMock()
+        stub_http.post_json.side_effect = RuntimeError("connection refused")
+        token = CentrifugeAdapter(mock_chain, http=stub_http).jtrsy()
+        assert token.price is None
+        assert token.tvl is None
+
+
+class TestOndoComplianceRouting:
+    """Regression tests for rOUSG/rUSDY compliance routing."""
+
+    def _make_chain(self):
+        chain = MagicMock()
+        chain.chain_id = 1
+        chain.checksum.side_effect = lambda x: x.lower()
+        return chain
+
+    def test_rousg_uses_kyc_not_blocklist(self):
+        chain = self._make_chain()
+        adapter = OndoAdapter(chain)
+        kyc_contract = MagicMock()
+        kyc_contract.functions.getKYCStatus.return_value.call.return_value = True
+        chain.get_contract.return_value = kyc_contract
+
+        rousg_addr = "0x54043c656f0fad0652d9ae2603cdf347c5578d00"  # rOUSG on Ethereum (lowercased)
+        result = adapter.can_transfer(rousg_addr, "0xsender", "0xreceiver")
+        assert result.method == ComplianceMethod.KYC_REGISTRY
+
+    def test_rusdy_uses_blocklist_not_kyc(self):
+        chain = self._make_chain()
+        adapter = OndoAdapter(chain)
+        blocklist_contract = MagicMock()
+        blocklist_contract.functions.isBlocked.return_value.call.return_value = False
+        chain.get_contract.return_value = blocklist_contract
+
+        rusdy_addr = "0xaf37c1167910ebc994e266949387d2c7c326b879"  # rUSDY on Ethereum (lowercased)
+        result = adapter.can_transfer(rusdy_addr, "0xsender", "0xreceiver")
+        assert result.method == ComplianceMethod.BLOCKLIST
+
+
+class TestAdaptersNamespace:
+    """Regression test: _as_list() must not crash on chains with missing adapters."""
+
+    def test_as_list_skips_unsupported_adapters(self):
+        from rwa_sdk.protocols import Adapters
+
+        chain = MagicMock()
+        chain.chain_id = 42161  # Arbitrum — only Securitize is deployed
+
+        ns = Adapters(chain)
+        # Must not raise AttributeError; returns only the adapters that loaded
+        adapters = ns._as_list()
+        protocols = {a.protocol for a in adapters}
+        assert "securitize" in protocols
+        assert "ondo" not in protocols
+        assert "maple" not in protocols
+        assert "centrifuge" not in protocols
+        assert "backed" not in protocols
+
+
+class TestCategoryExport:
+    def test_category_importable_from_top_level(self):
+        from rwa_sdk import Category
+        assert Category.US_TREASURY is not None
+        assert Category.PRIVATE_CREDIT is not None

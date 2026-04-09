@@ -10,6 +10,7 @@ from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.infra.evm import EVMChainService
 from rwa_sdk.infra.http import DefaultHttpClient, HttpClient
 from rwa_sdk.core.models import (
+    Category,
     ComplianceCheck,
     ComplianceMethod,
     TokenInfo,
@@ -27,7 +28,7 @@ class CentrifugeToken:
     token: str
     pool_id: str
     name: str
-    category: str
+    category: Category
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,7 @@ class CentrifugeAdapter:
                     token="0x8c213ee79581ff4984583c6a801e5263418c4b86",
                     pool_id="281474976710662",
                     name="Janus Henderson Anemoy Treasury Fund",
-                    category="us-treasury",
+                    category=Category.US_TREASURY,
                 ),
             },
             spoke="0xEC3582fcDc34078a4B7a8c75a5a3AE46f48525aB",
@@ -81,33 +82,14 @@ class CentrifugeAdapter:
         """Get JTRSY tranche token info."""
         return self._read_token("jtrsy")
 
-    def pool_data(self, pool_id: str = "281474976710662") -> dict:
-        """Fetch pool data from Centrifuge GraphQL API."""
-        query = """
-        query($poolId: String!) {
-          pools(where: { id: $poolId }) {
-            items {
-              id
-              name
-              currency
-              tokens {
-                items {
-                  symbol
-                  totalIssuance
-                  tokenPrice
-                }
-              }
-            }
-          }
-        }
-        """
-        return self._graphql_query(query, {"poolId": pool_id})
-
     def can_transfer(
         self, token_address: str, from_addr: str, to_addr: str, value: int = 0
     ) -> ComplianceCheck:
         """Check ERC-1404 transfer restriction on a tranche token."""
-        token_key = self._resolve_token_key(token_address)
+        try:
+            token_key = self._resolve_token_key(token_address)
+        except ValueError:
+            return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
         return self._check_transfer_restriction(from_addr, to_addr, value, token_key)
 
     def _check_transfer_restriction(
@@ -116,36 +98,26 @@ class CentrifugeAdapter:
         token = self._config.tokens[token_key]
         contract = self._chain.get_contract(token.token, combined_abi("erc20", "centrifuge_tranche"))
 
-        try:
-            code = contract.functions.detectTransferRestriction(
-                self._chain.checksum(from_addr),
-                self._chain.checksum(to_addr),
-                value,
-            ).call()
+        code = contract.functions.detectTransferRestriction(
+            self._chain.checksum(from_addr),
+            self._chain.checksum(to_addr),
+            value,
+        ).call()
 
-            message = ""
-            if code != 0:
-                message = contract.functions.messageForTransferRestriction(code).call()
+        message = ""
+        if code != 0:
+            message = contract.functions.messageForTransferRestriction(code).call()
 
-            return ComplianceCheck(
-                can_transfer=(code == 0),
-                restriction_code=code,
-                restriction_message=message,
-                method=ComplianceMethod.TRANSFER_RESTRICTION,
-            )
-        except Exception as e:
-            _log.warning("detectTransferRestriction failed for %s: %s", token_key, e)
-            return ComplianceCheck(
-                can_transfer=False,
-                restriction_code=255,
-                restriction_message=f"Check failed: {e}",
-                method=ComplianceMethod.TRANSFER_RESTRICTION,
-            )
+        return ComplianceCheck(
+            can_transfer=(code == 0),
+            restriction_code=code,
+            restriction_message=message,
+            method=ComplianceMethod.TRANSFER_RESTRICTION,
+        )
 
     def _read_token(self, token_key: str) -> TokenInfo:
         token = self._config.tokens[token_key]
 
-        # On-chain ERC-20 reads
         contract = self._chain.get_contract(token.token, load_abi("erc20"))
         decimals = contract.functions.decimals().call()
         total_supply_raw = contract.functions.totalSupply().call()
@@ -153,7 +125,6 @@ class CentrifugeAdapter:
         symbol = contract.functions.symbol().call()
         name = contract.functions.name().call()
 
-        # Price from API (more reliable than on-chain for Centrifuge)
         price = None
         tvl = None
         price_source = None
@@ -162,7 +133,7 @@ class CentrifugeAdapter:
         if api_data:
             price = api_data.get("price")
             price_source = "Centrifuge API"
-            if price:
+            if price is not None:
                 tvl = total_supply * price
 
         return TokenInfo(
@@ -201,13 +172,19 @@ class CentrifugeAdapter:
             if token_price:
                 return {"price": int(token_price) / 10**18}
             return None
-        except Exception:
+        except Exception as exc:
+            _log.warning("Centrifuge API unavailable for %r: %s", symbol, exc)
             return None
 
     def _graphql_query(self, query: str, variables: dict | None = None) -> dict:
         return self._http.post_json(
             self._api_url,
             {"query": query, "variables": variables or {}},
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Origin": "https://app.centrifuge.io",
+                "Referer": "https://app.centrifuge.io/",
+            },
         )
 
     def _resolve_token_key(self, token_address: str) -> str:

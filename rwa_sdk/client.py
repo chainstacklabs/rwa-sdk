@@ -1,13 +1,17 @@
 """Top-level RWAChain client — unified entry point."""
 
+import logging
+
 from rwa_sdk.core.chain import chain_name as _chain_name
-from rwa_sdk.core.models import TokenInfo
-from rwa_sdk.infra.evm import DefaultEVMChainService, EVMChainService
+from rwa_sdk.core.models import ComplianceCheck, TokenInfo
+from rwa_sdk.infra.evm import DefaultEVMChainService
 from rwa_sdk.infra.provider import create_rpc_provider
 from rwa_sdk.infra.validation import checksum_address
 from rwa_sdk.protocols import Adapters
 from rwa_sdk.protocols.base import ProtocolAdapter
 from rwa_sdk.standards import erc20
+
+_log = logging.getLogger(__name__)
 
 
 class RWAChain:
@@ -26,12 +30,18 @@ class RWAChain:
 
     def __init__(
         self,
-        rpc_url: str | None = None,
+        rpc_url: str,
         adapters: list[ProtocolAdapter] | None = None,
     ):
         w3 = create_rpc_provider(rpc_url)
         self._chain = DefaultEVMChainService(w3)
         if adapters is not None:
+            for a in adapters:
+                if not isinstance(a, ProtocolAdapter):
+                    raise TypeError(
+                        f"{a!r} does not satisfy ProtocolAdapter — "
+                        "must implement protocol, chain_id, all_tokens(), and can_transfer()"
+                    )
             self._adapters: list[ProtocolAdapter] = list(adapters)
             self._ns: Adapters | None = None
         else:
@@ -46,24 +56,37 @@ class RWAChain:
         return self._ns
 
     @property
+    def chain_id(self) -> int:
+        """EVM chain ID for the connected network (e.g. 1 for Ethereum, 42161 for Arbitrum)."""
+        return self._chain.chain_id
+
+    @property
     def chain_name(self) -> str:
         """Human-readable name for the connected chain."""
         return _chain_name(self._chain.chain_id)
 
     @property
-    def chain(self) -> EVMChainService:
-        """Access the underlying EVM chain service."""
-        return self._chain
+    def loaded_protocols(self) -> list[str]:
+        """Protocol names successfully loaded for this chain."""
+        return [adapter.protocol for adapter in self._adapters]
 
     def register_adapter(self, adapter: ProtocolAdapter) -> None:
         """Register a custom protocol adapter."""
+        if not isinstance(adapter, ProtocolAdapter):
+            raise TypeError(
+                f"{adapter!r} does not satisfy ProtocolAdapter — "
+                "must implement protocol, chain_id, all_tokens(), and can_transfer()"
+            )
         self._adapters.append(adapter)
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all supported tokens across all registered adapters."""
         tokens: list[TokenInfo] = []
         for adapter in self._adapters:
-            tokens.extend(adapter.all_tokens())
+            try:
+                tokens.extend(adapter.all_tokens())
+            except Exception as e:
+                _log.warning("Skipping adapter %r: %s", adapter.protocol, e)
         return tokens
 
     def balance_of(self, symbol: str, wallet: str) -> float:
@@ -78,27 +101,41 @@ class RWAChain:
 
         Raises:
             ValueError: If the symbol is not found or wallet address is invalid.
-
-        Note:
-            Each call resolves the token address by querying all adapters. For
-            protocols with on-chain or HTTP lookups in all_tokens(), this incurs
-            one network round-trip per adapter per call.
         """
         checksum_address(wallet, "wallet")
-        address = self._resolve_token_address(symbol)
-        return erc20.read_balance(self._chain, address, wallet)
+        token = self._resolve_token(symbol)
+        return erc20.read_balance(self._chain, token.address, wallet)
 
-    # --- Internal helpers ---
+    def can_transfer(
+        self, symbol: str, from_addr: str, to_addr: str, value: int = 0
+    ) -> ComplianceCheck:
+        """Check whether a transfer is permitted for a token, identified by symbol.
 
-    def _adapter_by_protocol(self, protocol: str) -> ProtocolAdapter:
+        Args:
+            symbol: Token symbol, e.g. "USDY". Case-insensitive.
+            from_addr: Sender address.
+            to_addr: Receiver address.
+            value: Transfer amount in raw units (optional, defaults to 0).
+
+        Returns:
+            ComplianceCheck with can_transfer and restriction details.
+
+        Raises:
+            ValueError: If the symbol is not found.
+        """
+        token = self._resolve_token(symbol)
+        adapter = self._adapter_for_protocol(token.protocol)
+        return adapter.can_transfer(token.address, from_addr, to_addr, value)
+
+    def _resolve_token(self, symbol: str) -> TokenInfo:
+        upper = symbol.upper()
+        for token in self.all_tokens():
+            if token.symbol.upper() == upper:
+                return token
+        raise ValueError(f"Unknown token symbol: {symbol!r}")
+
+    def _adapter_for_protocol(self, protocol: str) -> ProtocolAdapter:
         for adapter in self._adapters:
             if adapter.protocol == protocol:
                 return adapter
         raise ValueError(f"No adapter registered for protocol: {protocol!r}")
-
-    def _resolve_token_address(self, symbol: str) -> str:
-        upper = symbol.upper()
-        for token in self.all_tokens():
-            if token.symbol.upper() == upper:
-                return token.address
-        raise ValueError(f"Unknown token symbol: {symbol!r}")

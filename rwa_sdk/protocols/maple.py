@@ -8,6 +8,7 @@ from rwa_sdk.infra.abi import combined_abi, load_abi
 from rwa_sdk.core.chain import Chain
 from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.models import (
+    Category,
     ComplianceCheck,
     ComplianceMethod,
     PoolInfo,
@@ -29,7 +30,7 @@ class MapleToken:
     token: str
     pool: str
     name: str
-    category: str
+    category: Category
     pool_manager: str | None = None
 
 
@@ -54,14 +55,14 @@ class MapleAdapter:
                     token="0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
                     pool="0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
                     name="Maple syrupUSDC",
-                    category="private-credit",
+                    category=Category.PRIVATE_CREDIT,
                     pool_manager="0x7aD5fFa5fdF509E30186F4609c2f6269f4B6158F",
                 ),
                 "syrup_usdt": MapleToken(
                     token="0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
                     pool="0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
                     name="Maple syrupUSDT",
-                    category="private-credit",
+                    category=Category.PRIVATE_CREDIT,
                 ),
             },
             globals="0x34E7014E2Ef62C2F3Cc8c8c25Ac0110E2aA33B00",
@@ -83,11 +84,11 @@ class MapleAdapter:
 
     def syrup_usdc(self) -> TokenInfo:
         """Get syrupUSDC pool token info."""
-        return self._read_pool_token("syrup_usdc")
+        return self._read_token("syrup_usdc")
 
     def syrup_usdt(self) -> TokenInfo:
         """Get syrupUSDT pool token info."""
-        return self._read_pool_token("syrup_usdt")
+        return self._read_token("syrup_usdt")
 
     def pool_info(self, pool_key: str = "syrup_usdc") -> PoolInfo:
         """Get detailed pool info for a Maple pool."""
@@ -96,13 +97,11 @@ class MapleAdapter:
 
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
-        total_assets_raw = contract.functions.totalAssets().call()
-        total_assets = total_assets_raw / one_share
-        share_price_raw = contract.functions.convertToAssets(one_share).call()
-        share_price = share_price_raw / one_share
+        total_assets = contract.functions.totalAssets().call() / one_share
+        share_price = self._price_from_contract(contract, "convertToAssets")
+        exit_price = self._price_from_contract(contract, "convertToExitAssets")
         asset_address = contract.functions.asset().call()
 
-        # Utilization: (totalAssets - idle cash) / totalAssets
         idle_balance = read_balance(self._chain, asset_address, token.pool)
         utilization = (total_assets - idle_balance) / total_assets if total_assets > 0 else 0
 
@@ -113,27 +112,34 @@ class MapleAdapter:
             asset=asset_address,
             total_assets=total_assets,
             share_price=share_price,
+            exit_price=exit_price,
             utilization=utilization,
             protocol="maple",
         )
 
+    def list_pools(self) -> list[str]:
+        """Return the available pool keys for this chain (e.g. 'syrup_usdc', 'syrup_usdt')."""
+        return list(self._config.tokens.keys())
+
     def share_price(self, pool_key: str = "syrup_usdc") -> float:
-        """Get current share price (gross, before unrealized losses)."""
-        token = self._config.tokens[pool_key]
-        contract = self._get_pool_contract(token.pool)
-        decimals = contract.functions.decimals().call()
-        one_share = 10**decimals
-        raw = contract.functions.convertToAssets(one_share).call()
-        return raw / one_share
+        """Gross share price via convertToAssets().
+
+        Reflects the theoretical redemption value before deducting unrealized
+        loan losses. Use this for APY calculations (comparing price over time).
+        For liquidation or risk-adjusted NAV, prefer exit_price().
+        """
+        contract = self._get_pool_contract(self._config.tokens[pool_key].pool)
+        return self._price_from_contract(contract, "convertToAssets")
 
     def exit_price(self, pool_key: str = "syrup_usdc") -> float:
-        """Get net share price (deducts unrealized losses)."""
-        token = self._config.tokens[pool_key]
-        contract = self._get_pool_contract(token.pool)
-        decimals = contract.functions.decimals().call()
-        one_share = 10**decimals
-        raw = contract.functions.convertToExitAssets(one_share).call()
-        return raw / one_share
+        """Net share price via convertToExitAssets().
+
+        Deducts unrealized losses from the gross price. Use this for
+        risk-adjusted NAV and liquidation scenario analysis.
+        Returns a value <= share_price().
+        """
+        contract = self._get_pool_contract(self._config.tokens[pool_key].pool)
+        return self._price_from_contract(contract, "convertToExitAssets")
 
     def can_transfer(
         self, token_address: str, from_addr: str, to_addr: str, _value: int = 0
@@ -173,6 +179,7 @@ class MapleAdapter:
                 restriction_code=1,
                 restriction_message="sender not permitted",
                 method=ComplianceMethod.BITMAP,
+                blocking_party="sender",
             )
         if not receiver_ok:
             return ComplianceCheck(
@@ -180,21 +187,19 @@ class MapleAdapter:
                 restriction_code=1,
                 restriction_message="receiver not permitted",
                 method=ComplianceMethod.BITMAP,
+                blocking_party="receiver",
             )
         return ComplianceCheck(can_transfer=True, method=ComplianceMethod.BITMAP)
 
-    def _read_pool_token(self, pool_key: str) -> TokenInfo:
+    def _read_token(self, pool_key: str) -> TokenInfo:
         token = self._config.tokens[pool_key]
         contract = self._get_pool_contract(token.pool)
 
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
-        total_supply_raw = contract.functions.totalSupply().call()
-        total_supply = total_supply_raw / one_share
-        total_assets_raw = contract.functions.totalAssets().call()
-        total_assets = total_assets_raw / one_share
-        share_price_raw = contract.functions.convertToAssets(one_share).call()
-        share_price = share_price_raw / one_share
+        total_supply = contract.functions.totalSupply().call() / one_share
+        total_assets = contract.functions.totalAssets().call() / one_share
+        share_price = self._price_from_contract(contract, "convertToAssets")
         _log.debug("Maple %s share price: %.6f", pool_key, share_price)
 
         return TokenInfo(
@@ -212,6 +217,10 @@ class MapleAdapter:
             category=token.category,
         )
 
+    def _price_from_contract(self, contract, fn_name: str) -> float:
+        one_share = 10 ** contract.functions.decimals().call()
+        return contract.functions[fn_name](one_share).call() / one_share
+
     def _get_pool_contract(self, address: str):
         return self._chain.get_contract(address, combined_abi("erc20", "erc4626", "maple_pool"))
 
@@ -224,4 +233,4 @@ class MapleAdapter:
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Maple pool tokens on this chain."""
-        return [self._read_pool_token(key) for key in self._config.tokens]
+        return [self._read_token(key) for key in self._config.tokens]

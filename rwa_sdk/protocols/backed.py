@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from rwa_sdk.core.chain import Chain
 from rwa_sdk.core.exceptions import RegistryError
-from rwa_sdk.core.models import ComplianceCheck, ComplianceMethod, TokenInfo, YieldType
+from rwa_sdk.core.models import Category, ComplianceCheck, ComplianceMethod, TokenInfo, YieldType
 from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.infra.abi import load_abi
 from rwa_sdk.infra.evm import EVMChainService
@@ -19,9 +19,10 @@ _log = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class BackedToken:
     token: str
-    category: str
+    category: Category
     chainlink_feed: str | None = None
     feed_decimals: int | None = None
+    feed_max_age_seconds: int = 3600
 
 
 @dataclass(frozen=True)
@@ -41,18 +42,18 @@ class BackedAdapter:
             tokens={
                 "bib01": BackedToken(
                     token="0xCA30c93B02514f86d5C86a6e375E3A330B435Fb5",
-                    category="bond-etf",
+                    category=Category.BOND_ETF,
                     chainlink_feed="0x32d1463EB53b73C095625719Afa544D5426354cB",
                     feed_decimals=8,
+                    feed_max_age_seconds=86400,  # IB01/USD feed has a 24h heartbeat
                 ),
                 "bcspx": BackedToken(
                     token="0x1e2c4fb7ede391d116e6b41cd0608260e8801d59",
-                    category="equity-etf",
-                    feed_decimals=8,
+                    category=Category.EQUITY_ETF,
                 ),
                 "bnvda": BackedToken(
                     token="0xa34c5e0abe843e10461e2c9586ea03e55dbcc495",
-                    category="equity",
+                    category=Category.EQUITY,
                 ),
             },
             sanctions_list="0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
@@ -89,7 +90,7 @@ class BackedAdapter:
         price = None
         price_source = None
         if token.chainlink_feed and token.feed_decimals is not None:
-            price = self._read_chainlink_price(token.chainlink_feed, token.feed_decimals)
+            price = self._read_chainlink_price(token.chainlink_feed, token.feed_decimals, token.feed_max_age_seconds)
             price_source = "Chainlink latestRoundData()"
         else:
             _log.debug("No Chainlink feed configured for %s, price unavailable", token_key)
@@ -109,12 +110,12 @@ class BackedAdapter:
             category=token.category,
         )
 
-    def _read_chainlink_price(self, feed_address: str, decimals: int) -> float:
+    def _read_chainlink_price(self, feed_address: str, decimals: int, max_age_seconds: int = 3600) -> float:
         contract = self._chain.get_contract(feed_address, load_abi("chainlink_aggregator"))
         result = contract.functions.latestRoundData().call()
         answer = result[1]
         updated_at = result[3]
-        assert_price_fresh(updated_at)
+        assert_price_fresh(updated_at, max_age_seconds)
         price = answer / (10**decimals)
         _log.debug("Chainlink price fetched for %s: %.6f (updated_at=%d)", feed_address, price, updated_at)
         return price
@@ -137,8 +138,9 @@ class BackedAdapter:
                 restriction_code=1,
                 restriction_message=f"{who} is sanctioned",
                 method=ComplianceMethod.SANCTIONS,
+                blocking_party=who,
             )
-        return ComplianceCheck(can_transfer=True, restriction_code=0, restriction_message="", method=ComplianceMethod.SANCTIONS)
+        return ComplianceCheck(can_transfer=True, method=ComplianceMethod.SANCTIONS)
 
     def all_tokens(self) -> list[TokenInfo]:
         return [self._read_token(key) for key in self._config.tokens]

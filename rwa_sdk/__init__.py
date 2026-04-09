@@ -1,7 +1,10 @@
 """Read-only Python SDK for querying Real World Asset tokens across EVM chains."""
 
 from rwa_sdk.client import RWAChain
+from rwa_sdk.core.chain import Chain
+from rwa_sdk.core.exceptions import HttpError, OracleStalenessError, RegistryError, RWASDKError
 from rwa_sdk.core.models import (
+    Category,
     ComplianceCheck,
     ComplianceMethod,
     PoolInfo,
@@ -11,6 +14,12 @@ from rwa_sdk.core.models import (
 
 __all__ = [
     "RWAChain",
+    "Chain",
+    "Category",
+    "HttpError",
+    "OracleStalenessError",
+    "RegistryError",
+    "RWASDKError",
     "ComplianceCheck",
     "ComplianceMethod",
     "PoolInfo",

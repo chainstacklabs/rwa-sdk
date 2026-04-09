@@ -4,14 +4,9 @@ from rwa_sdk.infra.abi import combined_abi
 from rwa_sdk.infra.evm import EVMChainService
 
 
-def get_vault_contract(chain: EVMChainService, address: str):
-    """Get an ERC-4626 vault contract (includes ERC-20 functions)."""
-    return chain.get_contract(address, combined_abi("erc20", "erc4626"))
-
-
 def read_vault_data(chain: EVMChainService, address: str) -> dict:
     """Read vault metadata: asset, totalAssets, share price."""
-    contract = get_vault_contract(chain, address)
+    contract = chain.get_contract(address, combined_abi("erc20", "erc4626"))
     decimals = contract.functions.decimals().call()
     total_supply_raw = contract.functions.totalSupply().call()
     total_assets_raw = contract.functions.totalAssets().call()

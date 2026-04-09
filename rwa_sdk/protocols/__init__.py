@@ -19,11 +19,23 @@ class Adapters:
     centrifuge: CentrifugeAdapter
 
     def __init__(self, chain: EVMChainService) -> None:
+        from rwa_sdk.core.exceptions import RegistryError
         for name, cls in _REGISTRY.items():
-            setattr(self, name, cls(chain))
+            try:
+                setattr(self, name, cls(chain))
+            except RegistryError:
+                pass
+
+    def __getattr__(self, name: str):
+        if name in _REGISTRY:
+            raise AttributeError(
+                f"Adapter '{name}' is not available on this chain — "
+                f"it may not be deployed here."
+            )
+        raise AttributeError(name)
 
     def _as_list(self) -> list[ProtocolAdapter]:
-        return [getattr(self, name) for name in _REGISTRY]
+        return [getattr(self, name) for name in _REGISTRY if name in self.__dict__]
 
 
 __all__ = ["Adapters", "ProtocolAdapter"]
