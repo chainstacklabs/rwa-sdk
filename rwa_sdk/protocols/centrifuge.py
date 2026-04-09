@@ -1,9 +1,8 @@
 """Centrifuge adapter — private credit pools, tranche tokens."""
 
 import logging
-from web3 import Web3
 
-_log = logging.getLogger(__name__)
+from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
 from rwa_sdk.core.http import DefaultHttpClient, HttpClient
@@ -14,6 +13,8 @@ from rwa_sdk.core.models import (
     YieldType,
 )
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
+
+_log = logging.getLogger(__name__)
 
 CENTRIFUGE_API = "https://api.centrifuge.io"
 
@@ -202,7 +203,7 @@ class CentrifugeAdapter:
         for key, addrs in self._addresses["tokens"].items():
             if Web3.to_checksum_address(addrs["token"]) == checksum:
                 return key
-        return "jtrsy"
+        raise ValueError(f"Token address {token_address!r} not found in Centrifuge registry")
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Centrifuge tokens on this chain."""

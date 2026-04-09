@@ -79,9 +79,6 @@ class SecuritizeAdapter:
             method=ComplianceMethod.PRE_TRANSFER_CHECK,
         )
 
-    def _is_paused(self, token_key: str = "buidl") -> bool:
-        return self._get_contract(token_key).functions.isPaused().call()
-
     def get_ds_service(self, service_id: int, token_key: str = "buidl") -> str:
         """Get address of a DS Protocol service.
 
@@ -127,7 +124,7 @@ class SecuritizeAdapter:
         for key, addrs in self._addresses["tokens"].items():
             if Web3.to_checksum_address(addrs["token"]) == checksum:
                 return key
-        return "buidl"
+        raise ValueError(f"Token address {token_address!r} not found in Securitize registry")
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Securitize tokens on this chain."""
