@@ -23,10 +23,15 @@ class RWA:
         balance = rwa.balance_of("USDY", "0xYourWallet")
     """
 
-    def __init__(self, rpc_url: str | None = None, chain_id: int = 1):
+    def __init__(
+        self,
+        rpc_url: str | None = None,
+        chain_id: int = 1,
+        adapters: list[ProtocolAdapter] | None = None,
+    ):
         self._w3 = create_provider(rpc_url)
         self._chain_id = chain_id
-        self._adapters: list[ProtocolAdapter] = [
+        self._adapters: list[ProtocolAdapter] = adapters if adapters is not None else [
             OndoAdapter(self._w3, chain_id),
             BackedAdapter(self._w3, chain_id),
             SecuritizeAdapter(self._w3, chain_id),
