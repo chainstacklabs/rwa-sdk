@@ -99,13 +99,14 @@ class BackedAdapter:
         answer = result[1]  # (roundId, answer, startedAt, updatedAt, answeredInRound)
         updated_at = result[3]
         assert_price_fresh(updated_at)
+        price = answer / (10**decimals)
         _log.debug(
             "Chainlink price fetched for %s: %.6f (updated_at=%d)",
             feed_address,
-            answer / (10**decimals),
+            price,
             updated_at,
         )
-        return answer / (10**decimals)
+        return price
 
     # --- Compliance ---
 

@@ -76,8 +76,9 @@ class OndoAdapter:
         )
         price_raw, updated_at = contract.functions.getPriceData().call()
         assert_price_fresh(updated_at)
-        _log.debug("USDY price fetched: %.6f (updated_at=%d)", price_raw / 10**18, updated_at)
-        return price_raw / 10**18
+        price = price_raw / 10**18
+        _log.debug("USDY price fetched: %.6f (updated_at=%d)", price, updated_at)
+        return price
 
     # --- OUSG ---
 
@@ -124,8 +125,9 @@ class OndoAdapter:
         raw = contract.functions.getAssetPrice(
             Web3.to_checksum_address(token_address)
         ).call()
-        _log.debug("OUSG price fetched: %.6f", raw / 10**18)
-        return raw / 10**18
+        price = raw / 10**18
+        _log.debug("OUSG price fetched: %.6f", price)
+        return price
 
     # --- rUSDY (rebasing wrapper) ---
 
@@ -245,7 +247,7 @@ class OndoAdapter:
 
         if from_blocked or to_blocked:
             who = "sender" if from_blocked else "receiver"
-            _log.debug("USDY transfer blocked: %s", who)
+            _log.warning("USDY transfer blocked: %s", who)
             return ComplianceCheck(
                 can_transfer=False,
                 restriction_code=1,
@@ -268,7 +270,7 @@ class OndoAdapter:
 
         if not from_kyc or not to_kyc:
             who = "sender" if not from_kyc else "receiver"
-            _log.debug("OUSG transfer blocked (KYC): %s", who)
+            _log.warning("OUSG transfer blocked (KYC): %s", who)
             return ComplianceCheck(
                 can_transfer=False,
                 restriction_code=2,

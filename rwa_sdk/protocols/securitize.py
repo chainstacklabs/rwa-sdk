@@ -75,7 +75,7 @@ class SecuritizeAdapter:
             Web3.to_checksum_address(to_addr),
             value,
         ).call()
-        _log.debug("BUIDL preTransferCheck: code=%d reason=%r", code, reason)
+        _log.debug("BUIDL preTransferCheck: code=%d reason=%s", code, reason)
         return ComplianceCheck(
             can_transfer=(code == 0),
             restriction_code=code,
