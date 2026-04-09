@@ -158,6 +158,7 @@ class MapleAdapter:
         return ComplianceCheck(can_transfer=True, method=ComplianceMethod.BITMAP)
 
     def _read_pool_token(self, pool_key: str) -> TokenInfo:
+        """Read ERC-4626 pool contract to build TokenInfo with share price and TVL."""
         addrs = self._addresses["tokens"][pool_key]
         pool_addr = addrs.get("pool")
         if pool_addr is None:
@@ -191,6 +192,7 @@ class MapleAdapter:
         )
 
     def _get_pool_contract(self, address: str):
+        """Instantiate the pool contract with ERC-20 + ERC-4626 + Maple ABIs."""
         return self._w3.eth.contract(
             address=Web3.to_checksum_address(address),
             abi=combined_abi("erc20", "erc4626", "maple_pool"),

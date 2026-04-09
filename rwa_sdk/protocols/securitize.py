@@ -69,6 +69,7 @@ class SecuritizeAdapter:
     def _pre_transfer_check(
         self, from_addr: str, to_addr: str, value: int, token_key: str = "buidl"
     ) -> ComplianceCheck:
+        """Call on-chain preTransferCheck(from, to, value) and return ComplianceCheck."""
         contract = self._get_contract(token_key)
         code, reason = contract.functions.preTransferCheck(
             Web3.to_checksum_address(from_addr),
@@ -91,6 +92,7 @@ class SecuritizeAdapter:
         return self._get_contract(token_key).functions.getDSService(service_id).call()
 
     def _read_token(self, token_key: str) -> TokenInfo:
+        """Read on-chain ERC-20 metadata and return TokenInfo with constant $1.00 NAV."""
         addrs = self._addresses["tokens"][token_key]
         contract = self._get_contract(token_key)
         meta = _TOKENS[token_key]
@@ -116,6 +118,7 @@ class SecuritizeAdapter:
         )
 
     def _get_contract(self, token_key: str):
+        """Instantiate the DS Protocol contract for the given token key."""
         addrs = self._addresses["tokens"][token_key]
         return self._w3.eth.contract(
             address=Web3.to_checksum_address(addrs["token"]),

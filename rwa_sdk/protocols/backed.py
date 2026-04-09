@@ -56,6 +56,7 @@ class BackedAdapter:
         return self._read_token("bnvda")
 
     def _read_token(self, token_key: str) -> TokenInfo:
+        """Read on-chain metadata and Chainlink price for a Backed token by registry key."""
         addrs = self._addresses["tokens"][token_key]
         meta = read_token_metadata(self._w3, addrs["token"])
         token_meta = _TOKEN_META[token_key]
@@ -91,6 +92,8 @@ class BackedAdapter:
     # --- Price ---
 
     def _read_chainlink_price(self, feed_address: str, decimals: int) -> float:
+        """Call Chainlink latestRoundData(), assert freshness, return price scaled by feed decimals.
+        """
         contract = self._w3.eth.contract(
             address=Web3.to_checksum_address(feed_address),
             abi=load_abi("chainlink_aggregator"),
@@ -111,6 +114,7 @@ class BackedAdapter:
     # --- Compliance ---
 
     def _is_sanctioned(self, address: str) -> bool:
+        """Return True if address appears on the Chainalysis on-chain sanctions list."""
         sanctions_addr = self._addresses["shared"].get("sanctions_list")
         if not sanctions_addr:
             return False
