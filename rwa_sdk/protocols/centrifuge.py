@@ -78,11 +78,7 @@ class CentrifugeAdapter:
         return self._chain_id
 
     def jtrsy(self) -> TokenInfo:
-        """Get JTRSY tranche token info.
-
-        Uses on-chain ERC-20 reads for supply + GraphQL API for price/NAV
-        (price is pushed from hub chain per epoch, API is the reliable source).
-        """
+        """Get JTRSY tranche token info."""
         return self._read_token("jtrsy")
 
     def pool_data(self, pool_id: str = "281474976710662") -> dict:
@@ -185,7 +181,6 @@ class CentrifugeAdapter:
         )
 
     def _fetch_pool_token_data(self, symbol: str) -> dict | None:
-        """Fetch token price/issuance from GraphQL API."""
         try:
             query = """
             query($symbol: String!) {
@@ -210,14 +205,12 @@ class CentrifugeAdapter:
             return None
 
     def _graphql_query(self, query: str, variables: dict | None = None) -> dict:
-        """Execute a GraphQL query against the Centrifuge API."""
         return self._http.post_json(
             self._api_url,
             {"query": query, "variables": variables or {}},
         )
 
     def _resolve_token_key(self, token_address: str) -> str:
-        """Resolve a checksummed token address to its registry key."""
         checksum = self._chain.checksum(token_address)
         for key, token in self._config.tokens.items():
             if self._chain.checksum(token.token) == checksum:

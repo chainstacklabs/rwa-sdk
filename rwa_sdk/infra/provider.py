@@ -4,9 +4,10 @@ from web3 import Web3
 
 
 def create_rpc_provider(rpc_url: str | None = None) -> Web3:
-    """Create a Web3 provider.
+    """Create a Web3 HTTPProvider from an RPC URL.
 
-    An RPC URL is required. Pass a Chainstack endpoint or any Ethereum RPC URL.
+    Raises:
+        ValueError: If rpc_url is None.
     """
     if rpc_url is None:
         raise ValueError(

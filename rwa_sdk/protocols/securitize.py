@@ -61,18 +61,23 @@ class SecuritizeAdapter:
         return self._chain_id
 
     def buidl(self) -> TokenInfo:
+        """Get BUIDL token info."""
         return self._read_token("buidl")
 
     def buidl_i(self) -> TokenInfo:
+        """Get BUIDL-I token info."""
         return self._read_token("buidl_i")
 
     def wallet_count(self, token_key: str = "buidl") -> int:
+        """Return the number of registered wallets for a BUIDL token."""
         return self._get_contract(token_key).functions.walletCount().call()
 
     def get_wallet_at(self, index: int, token_key: str = "buidl") -> str:
+        """Return the wallet address at the given registry index."""
         return self._get_contract(token_key).functions.getWalletAt(index).call()
 
     def can_transfer(self, token_address: str, from_addr: str, to_addr: str, value: int = 0) -> ComplianceCheck:
+        """Check transfer eligibility via the DS Protocol preTransferCheck."""
         token_key = self._resolve_token_key(token_address)
         return self._pre_transfer_check(from_addr, to_addr, value, token_key)
 
@@ -87,6 +92,7 @@ class SecuritizeAdapter:
         return ComplianceCheck(can_transfer=(code == 0), restriction_code=code, restriction_message=reason, method=ComplianceMethod.PRE_TRANSFER_CHECK)
 
     def get_ds_service(self, service_id: int, token_key: str = "buidl") -> str:
+        """Return the DS Protocol service address for a given service ID."""
         return self._get_contract(token_key).functions.getDSService(service_id).call()
 
     def _read_token(self, token_key: str) -> TokenInfo:

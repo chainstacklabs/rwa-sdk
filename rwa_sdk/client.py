@@ -5,30 +5,9 @@ from rwa_sdk.core.models import TokenInfo
 from rwa_sdk.infra.evm import DefaultEVMChainService, EVMChainService
 from rwa_sdk.infra.provider import create_rpc_provider
 from rwa_sdk.infra.validation import checksum_address
-from rwa_sdk.protocols.backed import BackedAdapter
-from rwa_sdk.protocols.base import ProtocolAdapter, _REGISTRY
-from rwa_sdk.protocols.centrifuge import CentrifugeAdapter
-from rwa_sdk.protocols.maple import MapleAdapter
-from rwa_sdk.protocols.ondo import OndoAdapter
-from rwa_sdk.protocols.securitize import SecuritizeAdapter
+from rwa_sdk.protocols import Adapters
+from rwa_sdk.protocols.base import ProtocolAdapter
 from rwa_sdk.standards import erc20
-
-
-class Adapters:
-    """Typed namespace providing direct access to each protocol adapter."""
-
-    ondo: OndoAdapter
-    backed: BackedAdapter
-    securitize: SecuritizeAdapter
-    maple: MapleAdapter
-    centrifuge: CentrifugeAdapter
-
-    def __init__(self, chain: EVMChainService) -> None:
-        for name, cls in _REGISTRY.items():
-            setattr(self, name, cls(chain))
-
-    def _as_list(self) -> list[ProtocolAdapter]:
-        return [getattr(self, name) for name in _REGISTRY]
 
 
 class RWA:
@@ -76,16 +55,16 @@ class RWA:
         """Access the underlying EVM chain service."""
         return self._chain
 
+    def register_adapter(self, adapter: ProtocolAdapter) -> None:
+        """Register a custom protocol adapter."""
+        self._adapters.append(adapter)
+
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all supported tokens across all registered adapters."""
         tokens: list[TokenInfo] = []
         for adapter in self._adapters:
             tokens.extend(adapter.all_tokens())
         return tokens
-
-    def register_adapter(self, adapter: ProtocolAdapter) -> None:
-        """Register a custom protocol adapter."""
-        self._adapters.append(adapter)
 
     def balance_of(self, symbol: str, wallet: str) -> float:
         """Get token balance for a wallet, identified by symbol.

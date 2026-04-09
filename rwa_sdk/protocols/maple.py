@@ -184,7 +184,6 @@ class MapleAdapter:
         return ComplianceCheck(can_transfer=True, method=ComplianceMethod.BITMAP)
 
     def _read_pool_token(self, pool_key: str) -> TokenInfo:
-        """Read ERC-4626 pool contract to build TokenInfo with share price and TVL."""
         token = self._config.tokens[pool_key]
         contract = self._get_pool_contract(token.pool)
 
@@ -214,15 +213,9 @@ class MapleAdapter:
         )
 
     def _get_pool_contract(self, address: str):
-        """Instantiate the pool contract with ERC-20 + ERC-4626 + Maple ABIs."""
         return self._chain.get_contract(address, combined_abi("erc20", "erc4626", "maple_pool"))
 
     def _resolve_pool_key(self, token_address: str) -> str | None:
-        """Return pool key whose pool address matches token_address, else None.
-
-        In Maple's ERC-4626 model the pool contract is also the token contract,
-        so pool address and token address are the same.
-        """
         checksummed = self._chain.checksum(token_address)
         for key, token in self._config.tokens.items():
             if self._chain.checksum(token.pool) == checksummed:

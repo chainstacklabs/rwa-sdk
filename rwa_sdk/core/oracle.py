@@ -6,16 +6,12 @@ from rwa_sdk.core.exceptions import OracleStalenessError
 
 
 def assert_price_fresh(timestamp: int, max_age_seconds: int = 3600) -> None:
-    """Raise OracleStalenessError if *timestamp* is older than *max_age_seconds*.
-
-    Args:
-        timestamp: Unix timestamp (seconds) of the last oracle update.
-        max_age_seconds: Maximum acceptable age in seconds. Defaults to 3600 (1 hour).
+    """Raise OracleStalenessError if the price timestamp is older than max_age_seconds.
 
     Raises:
-        ValueError: If *timestamp* is in the future or appears to be in milliseconds
-            (greater than 1e12, which is year 33658 in unix seconds).
-        OracleStalenessError: If the price data is older than *max_age_seconds*.
+        ValueError: If timestamp is in the future or appears to be milliseconds
+            (value greater than 1e12).
+        OracleStalenessError: If the price data is older than max_age_seconds.
     """
     now = int(time.time())
     if timestamp > 1_000_000_000_000:

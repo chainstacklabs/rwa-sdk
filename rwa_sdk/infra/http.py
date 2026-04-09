@@ -10,30 +10,21 @@ from rwa_sdk.core.exceptions import HttpError
 
 @runtime_checkable
 class HttpClient(Protocol):
-    """Protocol for HTTP clients. Implement this to inject a custom HTTP client.
-
-    Raises:
-        HttpError: On any network failure, non-2xx response, or JSON decode error.
-    """
+    """Protocol for injectable HTTP clients."""
 
     def get_json(self, url: str, *, timeout: int = 15) -> dict[str, Any]:
-        """Perform a GET request and return the parsed JSON response."""
+        """Perform a GET request and return parsed JSON."""
         ...
 
     def post_json(
         self, url: str, payload: dict[str, Any], *, timeout: int = 15
     ) -> dict[str, Any]:
-        """Perform a POST request with a JSON body and return the parsed JSON response."""
+        """Perform a POST request with a JSON body and return parsed JSON."""
         ...
 
 
 class DefaultHttpClient:
-    """Default urllib-based HTTP client.
-
-    Raises:
-        HttpError: Wraps urllib.error.URLError, urllib.error.HTTPError, and
-            json.JSONDecodeError so callers only need to handle one exception type.
-    """
+    """urllib-based HTTP client implementation."""
 
     def get_json(self, url: str, *, timeout: int = 15) -> dict[str, Any]:
         try:

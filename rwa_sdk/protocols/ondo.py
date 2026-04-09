@@ -106,7 +106,6 @@ class OndoAdapter:
         return self._read_usdy_price(token.oracle)
 
     def _read_usdy_price(self, oracle_address: str) -> float:
-        """Call RWADynamicOracle.getPriceData(), assert freshness, return price as float."""
         contract = self._chain.get_contract(oracle_address, load_abi("ondo_oracle"))
         price_raw, updated_at = contract.functions.getPriceData().call()
         assert_price_fresh(updated_at)
@@ -148,10 +147,6 @@ class OndoAdapter:
         return self._read_ousg_price(token.oracle, token.token)
 
     def _read_ousg_price(self, oracle_address: str, token_address: str) -> float:
-        """Call OndoOracle.getAssetPrice() for the given token.
-
-        No timestamp is exposed by this oracle so staleness cannot be checked on-chain.
-        """
         contract = self._chain.get_contract(oracle_address, load_abi("ondo_ousg_oracle"))
         raw = contract.functions.getAssetPrice(
             self._chain.checksum(token_address)
@@ -260,7 +255,6 @@ class OndoAdapter:
         ).call()
 
     def _can_transfer_usdy(self, from_addr: str, to_addr: str) -> ComplianceCheck:
-        """Check USDY blocklist for sender and receiver; return ComplianceCheck."""
         from_blocked = self.is_blocked(from_addr)
         to_blocked = self.is_blocked(to_addr)
 
@@ -284,7 +278,6 @@ class OndoAdapter:
     def _can_transfer_ousg(
         self, from_addr: str, to_addr: str, group: int = 0
     ) -> ComplianceCheck:
-        """Check OUSG KYC registry for sender and receiver; return ComplianceCheck."""
         from_kyc = self.check_kyc(from_addr, group)
         to_kyc = self.check_kyc(to_addr, group)
 
