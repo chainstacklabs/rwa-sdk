@@ -1,5 +1,7 @@
 """Maple Finance adapter — syrupUSDC, syrupUSDT."""
 
+import logging
+
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
@@ -13,6 +15,8 @@ from rwa_sdk.core.models import (
 )
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_balance
+
+_log = logging.getLogger(__name__)
 
 _POOLS = {
     "syrup_usdc": {"name": "Maple syrupUSDC", "category": "private-credit"},
@@ -120,6 +124,9 @@ class MapleAdapter:
         pm_contract_addr = self._addresses.get("shared", {}).get("pool_permission_manager")
 
         if not pool_manager_addr or not pm_contract_addr:
+            _log.debug(
+                "Maple compliance skipped for %s: no PoolPermissionManager configured", pool_key
+            )
             return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
 
         contract = self._w3.eth.contract(
@@ -166,6 +173,7 @@ class MapleAdapter:
         total_assets = total_assets_raw / one_share
         share_price_raw = contract.functions.convertToAssets(one_share).call()
         share_price = share_price_raw / one_share
+        _log.debug("Maple %s share price: %.6f", pool_key, share_price)
 
         return TokenInfo(
             symbol=contract.functions.symbol().call(),

@@ -1,5 +1,7 @@
 """Backed Finance adapter — bIB01, bCSPX, bNVDA."""
 
+import logging
+
 from web3 import Web3
 
 from rwa_sdk.core.abi import load_abi
@@ -12,6 +14,8 @@ from rwa_sdk.core.models import (
 from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_token_metadata
+
+_log = logging.getLogger(__name__)
 
 # Token metadata not available on-chain in a structured way
 _TOKEN_META = {
@@ -64,6 +68,8 @@ class BackedAdapter:
                 feed_address, token_meta["feed_decimals"]
             )
             price_source = "Chainlink latestRoundData()"
+        else:
+            _log.debug("No Chainlink feed configured for %s, price unavailable", token_key)
 
         tvl = meta["total_supply"] * price if price else None
 
@@ -93,6 +99,12 @@ class BackedAdapter:
         answer = result[1]  # (roundId, answer, startedAt, updatedAt, answeredInRound)
         updated_at = result[3]
         assert_price_fresh(updated_at)
+        _log.debug(
+            "Chainlink price fetched for %s: %.6f (updated_at=%d)",
+            feed_address,
+            answer / (10**decimals),
+            updated_at,
+        )
         return answer / (10**decimals)
 
     # --- Compliance ---

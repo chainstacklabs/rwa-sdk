@@ -1,5 +1,7 @@
 """Ondo Finance adapter — USDY, OUSG, rUSDY, rOUSG."""
 
+import logging
+
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
@@ -13,6 +15,8 @@ from rwa_sdk.core.models import (
 from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
 from rwa_sdk.standards.erc20 import read_token_metadata
+
+_log = logging.getLogger(__name__)
 
 
 class OndoAdapter:
@@ -72,6 +76,7 @@ class OndoAdapter:
         )
         price_raw, updated_at = contract.functions.getPriceData().call()
         assert_price_fresh(updated_at)
+        _log.debug("USDY price fetched: %.6f (updated_at=%d)", price_raw / 10**18, updated_at)
         return price_raw / 10**18
 
     # --- OUSG ---
@@ -119,6 +124,7 @@ class OndoAdapter:
         raw = contract.functions.getAssetPrice(
             Web3.to_checksum_address(token_address)
         ).call()
+        _log.debug("OUSG price fetched: %.6f", raw / 10**18)
         return raw / 10**18
 
     # --- rUSDY (rebasing wrapper) ---
@@ -239,6 +245,7 @@ class OndoAdapter:
 
         if from_blocked or to_blocked:
             who = "sender" if from_blocked else "receiver"
+            _log.debug("USDY transfer blocked: %s", who)
             return ComplianceCheck(
                 can_transfer=False,
                 restriction_code=1,
@@ -261,6 +268,7 @@ class OndoAdapter:
 
         if not from_kyc or not to_kyc:
             who = "sender" if not from_kyc else "receiver"
+            _log.debug("OUSG transfer blocked (KYC): %s", who)
             return ComplianceCheck(
                 can_transfer=False,
                 restriction_code=2,

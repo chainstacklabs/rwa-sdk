@@ -1,5 +1,7 @@
 """Securitize adapter — BlackRock BUIDL."""
 
+import logging
+
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi
@@ -10,6 +12,8 @@ from rwa_sdk.core.models import (
     YieldType,
 )
 from rwa_sdk.core.registry import ETHEREUM, get_addresses
+
+_log = logging.getLogger(__name__)
 
 _TOKENS = {
     "buidl": {"name": "BlackRock BUIDL", "category": "us-treasury"},
@@ -71,6 +75,7 @@ class SecuritizeAdapter:
             Web3.to_checksum_address(to_addr),
             value,
         ).call()
+        _log.debug("BUIDL preTransferCheck: code=%d reason=%r", code, reason)
         return ComplianceCheck(
             can_transfer=(code == 0),
             restriction_code=code,
