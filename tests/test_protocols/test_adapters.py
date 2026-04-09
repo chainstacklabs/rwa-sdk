@@ -1,9 +1,11 @@
 """Tests for all five modernised protocol adapters."""
 
+import time
 from unittest.mock import MagicMock
 
 import pytest
 
+from rwa_sdk.core.exceptions import OracleStalenessError
 from rwa_sdk.core.models import ComplianceCheck, ComplianceMethod
 from rwa_sdk.protocols.backed import BackedAdapter
 from rwa_sdk.protocols.base import ProtocolAdapter
@@ -78,12 +80,38 @@ class TestBackedAdapter:
         mock_contract.functions.totalSupply.return_value.call.return_value = 1000 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "bIB01"
         mock_contract.functions.name.return_value.call.return_value = "Backed IB01"
-        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, 100 * 10**8, 0, 0, 0)
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, 100 * 10**8, 0, int(time.time()) - 30, 0)
         w3.eth.contract.return_value = mock_contract
 
         tokens = BackedAdapter(w3).all_tokens()
         assert len(tokens) == 3
         assert all(t.protocol == "backed" for t in tokens)
+
+    def test_chainlink_stale_raises(self, w3):
+        feed = "0xCA30c93B02514f86d5C86a6e375E3A330B435Fb5"
+        mock_contract = MagicMock()
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (
+            0, 100 * 10**8, 0, int(time.time()) - 7200, 0
+        )
+        w3.eth.contract.return_value = mock_contract
+
+        adapter = BackedAdapter(w3)
+        with pytest.raises(OracleStalenessError):
+            adapter._read_chainlink_price(feed, 8)
+
+    def test_chainlink_fresh_returns_price(self, w3):
+        feed = "0xCA30c93B02514f86d5C86a6e375E3A330B435Fb5"
+        answer = 150 * 10**8
+        decimals = 8
+        mock_contract = MagicMock()
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (
+            0, answer, 0, int(time.time()) - 30, 0
+        )
+        w3.eth.contract.return_value = mock_contract
+
+        adapter = BackedAdapter(w3)
+        price = adapter._read_chainlink_price(feed, decimals)
+        assert price == answer / 10**decimals
 
 
 # ---------------------------------------------------------------------------

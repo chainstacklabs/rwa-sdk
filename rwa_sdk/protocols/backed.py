@@ -3,6 +3,7 @@
 from web3 import Web3
 
 from rwa_sdk.core.abi import load_abi
+from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
@@ -89,6 +90,8 @@ class BackedAdapter:
         )
         result = contract.functions.latestRoundData().call()
         answer = result[1]  # (roundId, answer, startedAt, updatedAt, answeredInRound)
+        updated_at = result[3]
+        assert_price_fresh(updated_at)
         return answer / (10**decimals)
 
     # --- Compliance ---
