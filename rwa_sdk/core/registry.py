@@ -149,6 +149,7 @@ MAPLE = {
     ETHEREUM: {
         "tokens": {
             "syrup_usdc": {
+                # ERC-4626: pool IS the token — both keys share the same address
                 "token": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
                 "pool": "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
                 "pool_manager": "0x7aD5fFa5fdF509E30186F4609c2f6269f4B6158F",
