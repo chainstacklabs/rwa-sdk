@@ -58,9 +58,10 @@ class BackedAdapter:
 
         price = None
         price_source = None
-        if addrs.get("chainlink_feed"):
+        feed_address = addrs.get("chainlink_feed")
+        if feed_address:
             price = self._read_chainlink_price(
-                addrs["chainlink_feed"], token_meta["feed_decimals"]
+                feed_address, token_meta["feed_decimals"]
             )
             price_source = "Chainlink latestRoundData()"
 

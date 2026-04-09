@@ -1,11 +1,39 @@
 """Contract address and metadata registry per chain."""
 
+from typing import TypedDict, cast
+
 # Chain IDs
 ETHEREUM = 1
 ARBITRUM = 42161
 POLYGON = 137
 AVALANCHE = 43114
 BASE = 8453
+
+
+class _TokenAddressesBase(TypedDict):
+    """Required fields present in every token entry."""
+
+    token: str
+
+
+class _TokenAddresses(_TokenAddressesBase, total=False):
+    """Address entries for a single token. Only `token` is guaranteed present."""
+
+    oracle: str
+    blocklist: str
+    kyc_registry: str
+    chainlink_feed: str | None
+    pool: str
+    pool_manager: str
+    pool_id: str
+
+
+class _ChainAddresses(TypedDict):
+    """Registry entry for one protocol on one chain."""
+
+    tokens: dict[str, _TokenAddresses]
+    shared: dict[str, str | None]
+
 
 # Ondo Finance
 ONDO = {
@@ -137,7 +165,7 @@ MAPLE = {
 }
 
 
-def get_addresses(protocol: str, chain_id: int = ETHEREUM) -> dict:
+def get_addresses(protocol: str, chain_id: int = ETHEREUM) -> _ChainAddresses:
     """Get contract addresses for a protocol on a given chain.
 
     Raises:
@@ -154,9 +182,9 @@ def get_addresses(protocol: str, chain_id: int = ETHEREUM) -> dict:
     }
     if protocol not in registries:
         raise RegistryError(f"Unknown protocol: {protocol!r}")
-    addresses = registries[protocol].get(chain_id)
-    if addresses is None:
+    raw = registries[protocol].get(chain_id)
+    if raw is None:
         raise RegistryError(
             f"Protocol {protocol!r} is not deployed on chain {chain_id}"
         )
-    return addresses
+    return cast(_ChainAddresses, raw)

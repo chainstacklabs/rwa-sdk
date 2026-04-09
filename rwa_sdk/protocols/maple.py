@@ -1,5 +1,7 @@
 """Maple Finance adapter — syrupUSDC, syrupUSDT."""
 
+from typing import cast
+
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
@@ -49,7 +51,7 @@ class MapleAdapter:
     def pool_info(self, pool_key: str = "syrup_usdc") -> PoolInfo:
         """Get detailed pool info for a Maple pool."""
         addrs = self._addresses["tokens"][pool_key]
-        pool_addr = addrs["pool"]
+        pool_addr = cast(str, addrs.get("pool"))
         contract = self._get_pool_contract(pool_addr)
 
         decimals = contract.functions.decimals().call()
@@ -78,7 +80,7 @@ class MapleAdapter:
     def share_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get current share price (gross, before unrealized losses)."""
         addrs = self._addresses["tokens"][pool_key]
-        contract = self._get_pool_contract(addrs["pool"])
+        contract = self._get_pool_contract(cast(str, addrs.get("pool")))
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
         raw = contract.functions.convertToAssets(one_share).call()
@@ -87,7 +89,7 @@ class MapleAdapter:
     def exit_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get net share price (deducts unrealized losses)."""
         addrs = self._addresses["tokens"][pool_key]
-        contract = self._get_pool_contract(addrs["pool"])
+        contract = self._get_pool_contract(cast(str, addrs.get("pool")))
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
         raw = contract.functions.convertToExitAssets(one_share).call()
@@ -143,7 +145,7 @@ class MapleAdapter:
 
     def _read_pool_token(self, pool_key: str) -> TokenInfo:
         addrs = self._addresses["tokens"][pool_key]
-        pool_addr = addrs["pool"]
+        pool_addr = cast(str, addrs.get("pool"))
         contract = self._get_pool_contract(pool_addr)
         meta = _POOLS[pool_key]
 

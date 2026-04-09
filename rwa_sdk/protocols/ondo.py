@@ -1,5 +1,7 @@
 """Ondo Finance adapter — USDY, OUSG, rUSDY, rOUSG."""
 
+from typing import cast
+
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
@@ -36,7 +38,7 @@ class OndoAdapter:
         """Get USDY token info with current price from oracle."""
         addrs = self._addresses["tokens"]["usdy"]
         meta = read_token_metadata(self._w3, addrs["token"])
-        price = self._read_usdy_price(addrs["oracle"])
+        price = self._read_usdy_price(cast(str, addrs.get("oracle")))
         tvl = meta["total_supply"] * price if price else None
 
         return TokenInfo(
@@ -56,7 +58,7 @@ class OndoAdapter:
 
     def usdy_price(self) -> float:
         """Get current USDY price from oracle (18 decimals)."""
-        return self._read_usdy_price(self._addresses["tokens"]["usdy"]["oracle"])
+        return self._read_usdy_price(cast(str, self._addresses["tokens"]["usdy"].get("oracle")))
 
     def _read_usdy_price(self, oracle_address: str) -> float:
         contract = self._w3.eth.contract(
@@ -73,7 +75,7 @@ class OndoAdapter:
         """Get OUSG token info with current price from oracle."""
         addrs = self._addresses["tokens"]["ousg"]
         meta = read_token_metadata(self._w3, addrs["token"])
-        price = self._read_ousg_price(addrs["oracle"], addrs["token"])
+        price = self._read_ousg_price(cast(str, addrs.get("oracle")), addrs["token"])
         tvl = meta["total_supply"] * price if price else None
 
         return TokenInfo(
@@ -94,7 +96,7 @@ class OndoAdapter:
     def ousg_price(self) -> float:
         """Get current OUSG price from oracle (18 decimals)."""
         addrs = self._addresses["tokens"]["ousg"]
-        return self._read_ousg_price(addrs["oracle"], addrs["token"])
+        return self._read_ousg_price(cast(str, addrs.get("oracle")), addrs["token"])
 
     def _read_ousg_price(self, oracle_address: str, token_address: str) -> float:
         # OndoOracle.getAssetPrice() returns only the price — no timestamp is
@@ -196,7 +198,7 @@ class OndoAdapter:
         """Check if address is on the USDY blocklist."""
         addrs = self._addresses["tokens"]["usdy"]
         contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(addrs["blocklist"]),
+            address=Web3.to_checksum_address(cast(str, addrs.get("blocklist"))),
             abi=load_abi("ondo_blocklist"),
         )
         return contract.functions.isBlocked(
@@ -207,7 +209,7 @@ class OndoAdapter:
         """Check KYC status for OUSG (requires KYC registry)."""
         addrs = self._addresses["tokens"]["ousg"]
         contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(addrs["kyc_registry"]),
+            address=Web3.to_checksum_address(cast(str, addrs.get("kyc_registry"))),
             abi=load_abi("ondo_kyc_registry"),
         )
         return contract.functions.getKYCStatus(
