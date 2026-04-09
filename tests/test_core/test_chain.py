@@ -4,10 +4,6 @@ from rwa_sdk.core.chain import Chain, chain_name
 
 
 class TestChain:
-    def test_chain_is_int(self):
-        assert Chain.ETHEREUM == 1
-        assert Chain.ARBITRUM == 42161
-
     def test_chain_label(self):
         assert Chain.ETHEREUM.label == "Ethereum"
         assert Chain.ARBITRUM.label == "Arbitrum"

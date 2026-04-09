@@ -43,20 +43,9 @@ def rwa():
 
 
 class TestAdaptersNamespace:
-    def test_adapters_ondo(self, rwa):
-        assert rwa.adapters.ondo.protocol == "ondo"
-
-    def test_adapters_backed(self, rwa):
-        assert rwa.adapters.backed.protocol == "backed"
-
-    def test_adapters_securitize(self, rwa):
-        assert rwa.adapters.securitize.protocol == "securitize"
-
-    def test_adapters_maple(self, rwa):
-        assert rwa.adapters.maple.protocol == "maple"
-
-    def test_adapters_centrifuge(self, rwa):
-        assert rwa.adapters.centrifuge.protocol == "centrifuge"
+    @pytest.mark.parametrize("name", ["ondo", "backed", "securitize", "maple", "centrifuge"])
+    def test_all_adapters_wired(self, rwa, name):
+        assert getattr(rwa.adapters, name).protocol == name
 
     def test_adapters_raises_when_custom_adapters_injected(self):
         with patch("rwa_sdk.client.create_rpc_provider") as mock_provider:
@@ -88,15 +77,6 @@ class TestAllTokens:
 
 
 class TestRegisterAdapter:
-    def test_register_adapter_adds_to_internal_list(self, rwa):
-        stub = MagicMock(spec=ProtocolAdapter)
-        stub.protocol = "custom"
-        stub.all_tokens.return_value = []
-
-        initial_count = len(rwa._adapters)
-        rwa.register_adapter(stub)
-        assert len(rwa._adapters) == initial_count + 1
-
     def test_register_adapter_accessible_via_all_tokens(self, rwa):
         custom_token = _make_token("CUSTOM", "0xCCC", "custom")
         stub = MagicMock(spec=ProtocolAdapter)

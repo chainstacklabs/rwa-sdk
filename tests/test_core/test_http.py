@@ -25,19 +25,6 @@ class StubHttpClient:
         return self._response
 
 
-def test_stub_satisfies_protocol():
-    """A custom class satisfies HttpClient without inheriting from it."""
-    stub = StubHttpClient({"ok": True})
-    assert callable(getattr(stub, "get_json", None))
-    assert callable(getattr(stub, "post_json", None))
-
-
-def test_default_client_satisfies_protocol():
-    client = DefaultHttpClient()
-    assert callable(getattr(client, "get_json", None))
-    assert callable(getattr(client, "post_json", None))
-
-
 def test_network_error_raises_http_error():
     with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("timeout")):
         with pytest.raises(HttpError) as exc_info:

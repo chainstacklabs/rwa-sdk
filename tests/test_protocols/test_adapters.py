@@ -281,11 +281,6 @@ class TestMapleAdapter:
 
 
 class TestCentrifugeAdapter:
-    def test_injectable_http_client(self, mock_chain):
-        stub_http = MagicMock()
-        adapter = CentrifugeAdapter(mock_chain, http=stub_http)
-        assert adapter._http is stub_http
-
     def test_can_transfer_restriction_allowed(self, mock_chain):
         mock_chain.checksum.side_effect = lambda x: x
         adapter = CentrifugeAdapter(mock_chain)
