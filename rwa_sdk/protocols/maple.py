@@ -1,10 +1,11 @@
 """Maple Finance adapter — syrupUSDC, syrupUSDT."""
 
 import logging
+from dataclasses import dataclass
+from typing import ClassVar
 
-from web3 import Web3
-
-from rwa_sdk.core.abi import combined_abi, load_abi
+from rwa_sdk.infra.abi import combined_abi, load_abi
+from rwa_sdk.core.chain import Chain
 from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.models import (
     ComplianceCheck,
@@ -13,31 +14,68 @@ from rwa_sdk.core.models import (
     TokenInfo,
     YieldType,
 )
-from rwa_sdk.core.registry import ETHEREUM, get_addresses
+from rwa_sdk.infra.evm import EVMChainService
+from rwa_sdk.protocols.base import register
 from rwa_sdk.standards.erc20 import read_balance
 
 _log = logging.getLogger(__name__)
-
-_POOLS = {
-    "syrup_usdc": {"name": "Maple syrupUSDC", "category": "private-credit"},
-    "syrup_usdt": {"name": "Maple syrupUSDT", "category": "private-credit"},
-}
 
 # bytes32("P:lend") — Solidity bytes32 literals are right-padded with zeros
 _LEND_FUNCTION_ID: bytes = b"P:lend" + b"\x00" * 26
 
 
+@dataclass(frozen=True)
+class MapleToken:
+    token: str
+    pool: str
+    name: str
+    category: str
+    pool_manager: str | None = None
+
+
+@dataclass(frozen=True)
+class MapleConfig:
+    tokens: dict[str, MapleToken]
+    globals: str | None = None
+    pool_permission_manager: str | None = None
+
+
+@register
 class MapleAdapter:
     """Read-only adapter for Maple Finance lending pools."""
 
-    def __init__(self, w3: Web3, chain_id: int = ETHEREUM):
-        self._w3 = w3
-        self._chain_id = chain_id
-        self._addresses = get_addresses("maple", chain_id)
+    protocol = "maple"
 
-    @property
-    def protocol(self) -> str:
-        return "maple"
+    config: ClassVar[dict[Chain, MapleConfig]] = {
+        Chain.ETHEREUM: MapleConfig(
+            tokens={
+                "syrup_usdc": MapleToken(
+                    # ERC-4626: pool IS the token — both share the same address
+                    token="0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+                    pool="0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+                    name="Maple syrupUSDC",
+                    category="private-credit",
+                    pool_manager="0x7aD5fFa5fdF509E30186F4609c2f6269f4B6158F",
+                ),
+                "syrup_usdt": MapleToken(
+                    token="0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
+                    pool="0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
+                    name="Maple syrupUSDT",
+                    category="private-credit",
+                ),
+            },
+            globals="0x34E7014E2Ef62C2F3Cc8c8c25Ac0110E2aA33B00",
+            pool_permission_manager="0xBe10aDcE8B6E3E02Db384E7FaDA5395DD113D8b3",
+        ),
+    }
+
+    def __init__(self, chain: EVMChainService):
+        self._chain = chain
+        self._chain_id = chain.chain_id
+        try:
+            self._config = MapleAdapter.config[Chain(self._chain_id)]
+        except (KeyError, ValueError):
+            raise RegistryError(f"Maple is not deployed on chain {self._chain_id}")
 
     @property
     def chain_id(self) -> int:
@@ -53,11 +91,8 @@ class MapleAdapter:
 
     def pool_info(self, pool_key: str = "syrup_usdc") -> PoolInfo:
         """Get detailed pool info for a Maple pool."""
-        addrs = self._addresses["tokens"][pool_key]
-        pool_addr = addrs.get("pool")
-        if pool_addr is None:
-            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
-        contract = self._get_pool_contract(pool_addr)
+        token = self._config.tokens[pool_key]
+        contract = self._get_pool_contract(token.pool)
 
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
@@ -68,12 +103,12 @@ class MapleAdapter:
         asset_address = contract.functions.asset().call()
 
         # Utilization: (totalAssets - idle cash) / totalAssets
-        idle_balance = read_balance(self._w3, asset_address, pool_addr)
+        idle_balance = read_balance(self._chain, asset_address, token.pool)
         utilization = (total_assets - idle_balance) / total_assets if total_assets > 0 else 0
 
         return PoolInfo(
-            name=_POOLS[pool_key]["name"],
-            address=pool_addr,
+            name=token.name,
+            address=token.pool,
             chain_id=self._chain_id,
             asset=asset_address,
             total_assets=total_assets,
@@ -84,11 +119,8 @@ class MapleAdapter:
 
     def share_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get current share price (gross, before unrealized losses)."""
-        addrs = self._addresses["tokens"][pool_key]
-        pool_addr = addrs.get("pool")
-        if pool_addr is None:
-            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
-        contract = self._get_pool_contract(pool_addr)
+        token = self._config.tokens[pool_key]
+        contract = self._get_pool_contract(token.pool)
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
         raw = contract.functions.convertToAssets(one_share).call()
@@ -96,11 +128,8 @@ class MapleAdapter:
 
     def exit_price(self, pool_key: str = "syrup_usdc") -> float:
         """Get net share price (deducts unrealized losses)."""
-        addrs = self._addresses["tokens"][pool_key]
-        pool_addr = addrs.get("pool")
-        if pool_addr is None:
-            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
-        contract = self._get_pool_contract(pool_addr)
+        token = self._config.tokens[pool_key]
+        contract = self._get_pool_contract(token.pool)
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
         raw = contract.functions.convertToExitAssets(one_share).call()
@@ -111,7 +140,7 @@ class MapleAdapter:
     ) -> ComplianceCheck:
         """Check transfer eligibility via Maple PoolPermissionManager.
 
-        Tokens whose pool has a pool_manager registry entry use BITMAP compliance.
+        Tokens whose pool has a pool_manager entry use BITMAP compliance.
         All others (e.g. syrup_usdt) are permissionless and return NONE.
         Compliance is checked sender-first; if the sender is blocked the receiver is not queried.
         """
@@ -119,9 +148,9 @@ class MapleAdapter:
         if pool_key is None:
             return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
 
-        token_addrs = self._addresses["tokens"][pool_key]
-        pool_manager_addr = token_addrs.get("pool_manager")
-        pm_contract_addr = self._addresses.get("shared", {}).get("pool_permission_manager")
+        token = self._config.tokens[pool_key]
+        pool_manager_addr = token.pool_manager
+        pm_contract_addr = self._config.pool_permission_manager
 
         if not pool_manager_addr or not pm_contract_addr:
             _log.debug(
@@ -129,16 +158,13 @@ class MapleAdapter:
             )
             return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
 
-        contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(pm_contract_addr),
-            abi=load_abi("maple_pool_permission_manager"),
-        )
-        checksum_pm = Web3.to_checksum_address(pool_manager_addr)
+        contract = self._chain.get_contract(pm_contract_addr, load_abi("maple_pool_permission_manager"))
+        checksum_pm = self._chain.checksum(pool_manager_addr)
         sender_ok = contract.functions.hasPermission(
-            checksum_pm, Web3.to_checksum_address(from_addr), _LEND_FUNCTION_ID
+            checksum_pm, self._chain.checksum(from_addr), _LEND_FUNCTION_ID
         ).call()
         receiver_ok = contract.functions.hasPermission(
-            checksum_pm, Web3.to_checksum_address(to_addr), _LEND_FUNCTION_ID
+            checksum_pm, self._chain.checksum(to_addr), _LEND_FUNCTION_ID
         ).call()
 
         if not sender_ok:
@@ -159,12 +185,8 @@ class MapleAdapter:
 
     def _read_pool_token(self, pool_key: str) -> TokenInfo:
         """Read ERC-4626 pool contract to build TokenInfo with share price and TVL."""
-        addrs = self._addresses["tokens"][pool_key]
-        pool_addr = addrs.get("pool")
-        if pool_addr is None:
-            raise RegistryError(f"No pool registered for {pool_key!r} on chain {self._chain_id}")
-        contract = self._get_pool_contract(pool_addr)
-        meta = _POOLS[pool_key]
+        token = self._config.tokens[pool_key]
+        contract = self._get_pool_contract(token.pool)
 
         decimals = contract.functions.decimals().call()
         one_share = 10**decimals
@@ -179,7 +201,7 @@ class MapleAdapter:
         return TokenInfo(
             symbol=contract.functions.symbol().call(),
             name=contract.functions.name().call(),
-            address=pool_addr,
+            address=token.pool,
             chain_id=self._chain_id,
             decimals=decimals,
             total_supply=total_supply,
@@ -188,15 +210,12 @@ class MapleAdapter:
             tvl=total_assets,
             yield_type=YieldType.VAULT,
             protocol="maple",
-            category=meta["category"],
+            category=token.category,
         )
 
     def _get_pool_contract(self, address: str):
         """Instantiate the pool contract with ERC-20 + ERC-4626 + Maple ABIs."""
-        return self._w3.eth.contract(
-            address=Web3.to_checksum_address(address),
-            abi=combined_abi("erc20", "erc4626", "maple_pool"),
-        )
+        return self._chain.get_contract(address, combined_abi("erc20", "erc4626", "maple_pool"))
 
     def _resolve_pool_key(self, token_address: str) -> str | None:
         """Return pool key whose pool address matches token_address, else None.
@@ -204,17 +223,12 @@ class MapleAdapter:
         In Maple's ERC-4626 model the pool contract is also the token contract,
         so pool address and token address are the same.
         """
-        checksummed = Web3.to_checksum_address(token_address)
-        for key, addrs in self._addresses.get("tokens", {}).items():
-            pool = addrs.get("pool", "")
-            if pool and Web3.to_checksum_address(pool) == checksummed:
+        checksummed = self._chain.checksum(token_address)
+        for key, token in self._config.tokens.items():
+            if self._chain.checksum(token.pool) == checksummed:
                 return key
         return None
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Maple pool tokens on this chain."""
-        tokens = []
-        for key in _POOLS:
-            if key in self._addresses["tokens"]:
-                tokens.append(self._read_pool_token(key))
-        return tokens
+        return [self._read_pool_token(key) for key in self._config.tokens]

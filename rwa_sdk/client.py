@@ -1,11 +1,12 @@
 """Top-level RWA client — unified entry point."""
 
-from web3 import Web3
-
+from rwa_sdk.core.chain import chain_name as _chain_name
 from rwa_sdk.core.models import TokenInfo
-from rwa_sdk.core.provider import create_provider
+from rwa_sdk.infra.evm import DefaultEVMChainService, EVMChainService
+from rwa_sdk.infra.provider import create_rpc_provider
+from rwa_sdk.infra.validation import checksum_address
 from rwa_sdk.protocols.backed import BackedAdapter
-from rwa_sdk.protocols.base import ProtocolAdapter
+from rwa_sdk.protocols.base import ProtocolAdapter, _REGISTRY
 from rwa_sdk.protocols.centrifuge import CentrifugeAdapter
 from rwa_sdk.protocols.maple import MapleAdapter
 from rwa_sdk.protocols.ondo import OndoAdapter
@@ -13,60 +14,67 @@ from rwa_sdk.protocols.securitize import SecuritizeAdapter
 from rwa_sdk.standards import erc20
 
 
+class Adapters:
+    """Typed namespace providing direct access to each protocol adapter."""
+
+    ondo: OndoAdapter
+    backed: BackedAdapter
+    securitize: SecuritizeAdapter
+    maple: MapleAdapter
+    centrifuge: CentrifugeAdapter
+
+    def __init__(self, chain: EVMChainService) -> None:
+        for name, cls in _REGISTRY.items():
+            setattr(self, name, cls(chain))
+
+    def _as_list(self) -> list[ProtocolAdapter]:
+        return [getattr(self, name) for name in _REGISTRY]
+
+
 class RWA:
     """Read-only SDK for querying RWA tokens across EVM chains.
 
     Usage:
         rwa = RWA(rpc_url="https://nd-xxx.chainstack.com/xxx")
-        token = rwa.ondo.all_tokens()[0]
-        print(token.price, token.tvl)
+        tokens = rwa.all_tokens()
         balance = rwa.balance_of("USDY", "0xYourWallet")
+
+        # Multi-chain: one instance per chain RPC
+        eth = RWA(rpc_url="https://eth-rpc...")
+        arb = RWA(rpc_url="https://arb-rpc...")
+        all_tokens = eth.all_tokens() + arb.all_tokens()
     """
 
     def __init__(
         self,
         rpc_url: str | None = None,
-        chain_id: int = 1,
         adapters: list[ProtocolAdapter] | None = None,
     ):
-        self._w3 = create_provider(rpc_url)
-        self._chain_id = chain_id
-        self._adapters: list[ProtocolAdapter] = adapters if adapters is not None else [
-            OndoAdapter(self._w3, chain_id),
-            BackedAdapter(self._w3, chain_id),
-            SecuritizeAdapter(self._w3, chain_id),
-            MapleAdapter(self._w3, chain_id),
-            CentrifugeAdapter(self._w3, chain_id),
-        ]
-
-    # --- Named accessors ---
+        w3 = create_rpc_provider(rpc_url)
+        self._chain = DefaultEVMChainService(w3)
+        if adapters is not None:
+            self._adapters: list[ProtocolAdapter] = list(adapters)
+            self._ns: Adapters | None = None
+        else:
+            self._ns = Adapters(self._chain)
+            self._adapters = self._ns._as_list()
 
     @property
-    def ondo(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("ondo")
+    def adapters(self) -> Adapters:
+        """Typed namespace for direct access to each protocol adapter."""
+        if self._ns is None:
+            raise RuntimeError("adapters namespace is not available when custom adapters are injected")
+        return self._ns
 
     @property
-    def backed(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("backed")
+    def chain_name(self) -> str:
+        """Human-readable name for the connected chain."""
+        return _chain_name(self._chain.chain_id)
 
     @property
-    def securitize(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("securitize")
-
-    @property
-    def maple(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("maple")
-
-    @property
-    def centrifuge(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("centrifuge")
-
-    @property
-    def w3(self) -> Web3:
-        """Access the underlying Web3 instance."""
-        return self._w3
-
-    # --- Public API ---
+    def chain(self) -> EVMChainService:
+        """Access the underlying EVM chain service."""
+        return self._chain
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all supported tokens across all registered adapters."""
@@ -77,8 +85,6 @@ class RWA:
 
     def register_adapter(self, adapter: ProtocolAdapter) -> None:
         """Register a custom protocol adapter."""
-        if not isinstance(adapter, ProtocolAdapter):
-            raise TypeError(f"Expected ProtocolAdapter, got {type(adapter).__name__!r}")
         self._adapters.append(adapter)
 
     def balance_of(self, symbol: str, wallet: str) -> float:
@@ -92,15 +98,16 @@ class RWA:
             Human-readable float balance (raw amount divided by 10^decimals).
 
         Raises:
-            ValueError: If the symbol is not found across registered adapters.
+            ValueError: If the symbol is not found or wallet address is invalid.
 
         Note:
             Each call resolves the token address by querying all adapters. For
             protocols with on-chain or HTTP lookups in all_tokens(), this incurs
             one network round-trip per adapter per call.
         """
+        checksum_address(wallet, "wallet")
         address = self._resolve_token_address(symbol)
-        return erc20.read_balance(self._w3, address, wallet)
+        return erc20.read_balance(self._chain, address, wallet)
 
     # --- Internal helpers ---
 

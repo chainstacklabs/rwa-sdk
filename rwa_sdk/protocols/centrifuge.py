@@ -1,51 +1,77 @@
 """Centrifuge adapter — private credit pools, tranche tokens."""
 
 import logging
+from dataclasses import dataclass
+from typing import ClassVar
 
-from web3 import Web3
-
-from rwa_sdk.core.abi import combined_abi, load_abi
-from rwa_sdk.core.http import DefaultHttpClient, HttpClient
+from rwa_sdk.infra.abi import combined_abi, load_abi
+from rwa_sdk.core.chain import Chain
+from rwa_sdk.core.exceptions import RegistryError
+from rwa_sdk.infra.evm import EVMChainService
+from rwa_sdk.infra.http import DefaultHttpClient, HttpClient
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
     TokenInfo,
     YieldType,
 )
-from rwa_sdk.core.registry import ETHEREUM, get_addresses
+from rwa_sdk.protocols.base import register
 
 _log = logging.getLogger(__name__)
 
 CENTRIFUGE_API = "https://api.centrifuge.io"
 
-_TOKENS = {
-    "jtrsy": {
-        "name": "Janus Henderson Anemoy Treasury Fund",
-        "category": "us-treasury",
-        "pool_id": "281474976710662",
-    },
-}
+
+@dataclass(frozen=True)
+class CentrifugeToken:
+    token: str
+    pool_id: str
+    name: str
+    category: str
 
 
+@dataclass(frozen=True)
+class CentrifugeConfig:
+    tokens: dict[str, CentrifugeToken]
+    spoke: str | None = None
+    vault_registry: str | None = None
+
+
+@register
 class CentrifugeAdapter:
     """Read-only adapter for Centrifuge private credit pools."""
 
+    protocol = "centrifuge"
+
+    config: ClassVar[dict[Chain, CentrifugeConfig]] = {
+        Chain.ETHEREUM: CentrifugeConfig(
+            tokens={
+                "jtrsy": CentrifugeToken(
+                    token="0x8c213ee79581ff4984583c6a801e5263418c4b86",
+                    pool_id="281474976710662",
+                    name="Janus Henderson Anemoy Treasury Fund",
+                    category="us-treasury",
+                ),
+            },
+            spoke="0xEC3582fcDc34078a4B7a8c75a5a3AE46f48525aB",
+            vault_registry="0xd9531AC47928c3386346f82d9A2478960bf2CA7B",
+        ),
+    }
+
     def __init__(
         self,
-        w3: Web3,
-        chain_id: int = ETHEREUM,
+        chain: EVMChainService,
         http: HttpClient | None = None,
         api_url: str = CENTRIFUGE_API,
     ):
-        self._w3 = w3
-        self._chain_id = chain_id
-        self._addresses = get_addresses("centrifuge", chain_id)
+        self._chain = chain
+        self._chain_id = chain.chain_id
+        try:
+            self._config = CentrifugeAdapter.config[Chain(self._chain_id)]
+        except (KeyError, ValueError):
+            raise RegistryError(f"Centrifuge is not deployed on chain {self._chain_id}")
         self._http = http or DefaultHttpClient()
         self._api_url = api_url
-
-    @property
-    def protocol(self) -> str:
-        return "centrifuge"
 
     @property
     def chain_id(self) -> int:
@@ -91,16 +117,13 @@ class CentrifugeAdapter:
     def _check_transfer_restriction(
         self, from_addr: str, to_addr: str, value: int, token_key: str = "jtrsy"
     ) -> ComplianceCheck:
-        addrs = self._addresses["tokens"][token_key]
-        contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(addrs["token"]),
-            abi=combined_abi("erc20", "centrifuge_tranche"),
-        )
+        token = self._config.tokens[token_key]
+        contract = self._chain.get_contract(token.token, combined_abi("erc20", "centrifuge_tranche"))
 
         try:
             code = contract.functions.detectTransferRestriction(
-                Web3.to_checksum_address(from_addr),
-                Web3.to_checksum_address(to_addr),
+                self._chain.checksum(from_addr),
+                self._chain.checksum(to_addr),
                 value,
             ).call()
 
@@ -124,14 +147,10 @@ class CentrifugeAdapter:
             )
 
     def _read_token(self, token_key: str) -> TokenInfo:
-        addrs = self._addresses["tokens"][token_key]
-        meta = _TOKENS[token_key]
+        token = self._config.tokens[token_key]
 
         # On-chain ERC-20 reads
-        contract = self._w3.eth.contract(
-            address=Web3.to_checksum_address(addrs["token"]),
-            abi=load_abi("erc20"),
-        )
+        contract = self._chain.get_contract(token.token, load_abi("erc20"))
         decimals = contract.functions.decimals().call()
         total_supply_raw = contract.functions.totalSupply().call()
         total_supply = total_supply_raw / (10**decimals)
@@ -153,7 +172,7 @@ class CentrifugeAdapter:
         return TokenInfo(
             symbol=symbol,
             name=name,
-            address=addrs["token"],
+            address=token.token,
             chain_id=self._chain_id,
             decimals=decimals,
             total_supply=total_supply,
@@ -162,7 +181,7 @@ class CentrifugeAdapter:
             tvl=tvl,
             yield_type=YieldType.VAULT,
             protocol="centrifuge",
-            category=meta["category"],
+            category=token.category,
         )
 
     def _fetch_pool_token_data(self, symbol: str) -> dict | None:
@@ -199,16 +218,12 @@ class CentrifugeAdapter:
 
     def _resolve_token_key(self, token_address: str) -> str:
         """Resolve a checksummed token address to its registry key."""
-        checksum = Web3.to_checksum_address(token_address)
-        for key, addrs in self._addresses["tokens"].items():
-            if Web3.to_checksum_address(addrs["token"]) == checksum:
+        checksum = self._chain.checksum(token_address)
+        for key, token in self._config.tokens.items():
+            if self._chain.checksum(token.token) == checksum:
                 return key
         raise ValueError(f"Token address {token_address!r} not found in Centrifuge registry")
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all Centrifuge tokens on this chain."""
-        tokens = []
-        for key in _TOKENS:
-            if key in self._addresses["tokens"]:
-                tokens.append(self._read_token(key))
-        return tokens
+        return [self._read_token(key) for key in self._config.tokens]

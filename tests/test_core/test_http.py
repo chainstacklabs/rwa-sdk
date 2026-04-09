@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from rwa_sdk.core.exceptions import HttpError
-from rwa_sdk.core.http import DefaultHttpClient, HttpClient
+from rwa_sdk.infra.http import DefaultHttpClient
 
 
 class StubHttpClient:
@@ -27,11 +27,15 @@ class StubHttpClient:
 
 def test_stub_satisfies_protocol():
     """A custom class satisfies HttpClient without inheriting from it."""
-    assert isinstance(StubHttpClient({"ok": True}), HttpClient)
+    stub = StubHttpClient({"ok": True})
+    assert callable(getattr(stub, "get_json", None))
+    assert callable(getattr(stub, "post_json", None))
 
 
 def test_default_client_satisfies_protocol():
-    assert isinstance(DefaultHttpClient(), HttpClient)
+    client = DefaultHttpClient()
+    assert callable(getattr(client, "get_json", None))
+    assert callable(getattr(client, "post_json", None))
 
 
 def test_network_error_raises_http_error():
