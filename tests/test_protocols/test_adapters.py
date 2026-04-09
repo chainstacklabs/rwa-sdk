@@ -1,7 +1,6 @@
 """Tests for all five modernised protocol adapters."""
 
-import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -75,42 +74,55 @@ class TestBackedAdapter:
         assert "sender" in result.restriction_message
 
     def test_all_tokens_returns_list(self, w3):
+        FIXED_NOW = 1_750_000_000
+        FRESH_TS = FIXED_NOW - 30
         mock_contract = MagicMock()
         mock_contract.functions.decimals.return_value.call.return_value = 18
         mock_contract.functions.totalSupply.return_value.call.return_value = 1000 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "bIB01"
         mock_contract.functions.name.return_value.call.return_value = "Backed IB01"
-        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, 100 * 10**8, 0, int(time.time()) - 30, 0)
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, 100 * 10**8, 0, FRESH_TS, 0)
         w3.eth.contract.return_value = mock_contract
 
-        tokens = BackedAdapter(w3).all_tokens()
+        with patch("rwa_sdk.core.oracle.time") as mock_time:
+            mock_time.time.return_value = float(FIXED_NOW)
+            tokens = BackedAdapter(w3).all_tokens()
         assert len(tokens) == 3
         assert all(t.protocol == "backed" for t in tokens)
 
     def test_chainlink_stale_raises(self, w3):
+        FIXED_NOW = 1_750_000_000
+        STALE_TS = FIXED_NOW - 7200
         feed = "0xCA30c93B02514f86d5C86a6e375E3A330B435Fb5"
         mock_contract = MagicMock()
         mock_contract.functions.latestRoundData.return_value.call.return_value = (
-            0, 100 * 10**8, 0, int(time.time()) - 7200, 0
+            0, 100 * 10**8, 0, STALE_TS, 0
         )
         w3.eth.contract.return_value = mock_contract
 
         adapter = BackedAdapter(w3)
-        with pytest.raises(OracleStalenessError):
-            adapter._read_chainlink_price(feed, 8)
+        with patch("rwa_sdk.core.oracle.time") as mock_time:
+            mock_time.time.return_value = float(FIXED_NOW)
+            with pytest.raises(OracleStalenessError) as exc_info:
+                adapter._read_chainlink_price(feed, 8)
+        assert exc_info.value.max_age_seconds == 3600
 
     def test_chainlink_fresh_returns_price(self, w3):
+        FIXED_NOW = 1_750_000_000
+        FRESH_TS = FIXED_NOW - 30
         feed = "0xCA30c93B02514f86d5C86a6e375E3A330B435Fb5"
         answer = 150 * 10**8
         decimals = 8
         mock_contract = MagicMock()
         mock_contract.functions.latestRoundData.return_value.call.return_value = (
-            0, answer, 0, int(time.time()) - 30, 0
+            0, answer, 0, FRESH_TS, 0
         )
         w3.eth.contract.return_value = mock_contract
 
         adapter = BackedAdapter(w3)
-        price = adapter._read_chainlink_price(feed, decimals)
+        with patch("rwa_sdk.core.oracle.time") as mock_time:
+            mock_time.time.return_value = float(FIXED_NOW)
+            price = adapter._read_chainlink_price(feed, decimals)
         assert price == answer / 10**decimals
 
 
@@ -201,19 +213,54 @@ class TestOndoAdapter:
         assert "sender" in result.restriction_message
 
     def test_all_tokens_returns_list(self, w3):
+        FIXED_NOW = 1_750_000_000
+        FRESH_TS = FIXED_NOW - 30
         mock_contract = MagicMock()
         mock_contract.functions.decimals.return_value.call.return_value = 18
         mock_contract.functions.totalSupply.return_value.call.return_value = 1000 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "USDY"
         mock_contract.functions.name.return_value.call.return_value = "USDY"
-        mock_contract.functions.getPrice.return_value.call.return_value = 1_02 * 10**16  # $1.02
+        mock_contract.functions.getPriceData.return_value.call.return_value = (1_02 * 10**16, FRESH_TS)  # $1.02
         mock_contract.functions.getAssetPrice.return_value.call.return_value = 110 * 10**18  # $110
         w3.eth.contract.return_value = mock_contract
 
-        tokens = OndoAdapter(w3).all_tokens()
+        with patch("rwa_sdk.core.oracle.time") as mock_time:
+            mock_time.time.return_value = float(FIXED_NOW)
+            tokens = OndoAdapter(w3).all_tokens()
         # Ethereum mainnet: usdy, ousg, rusdy, rousg
         assert len(tokens) == 4
         assert all(t.protocol == "ondo" for t in tokens)
+
+    def test_usdy_stale_raises(self, w3):
+        FIXED_NOW = 1_750_000_000
+        STALE_TS = FIXED_NOW - 7200
+        price_raw = 1_02 * 10**16
+        oracle_addr = "0x96F6eF951840721AdBF46Ac996b59E0235CB985C"
+        mock_contract = MagicMock()
+        mock_contract.functions.getPriceData.return_value.call.return_value = (price_raw, STALE_TS)
+        w3.eth.contract.return_value = mock_contract
+
+        adapter = OndoAdapter(w3)
+        with patch("rwa_sdk.core.oracle.time") as mock_time:
+            mock_time.time.return_value = float(FIXED_NOW)
+            with pytest.raises(OracleStalenessError) as exc_info:
+                adapter._read_usdy_price(oracle_addr)
+        assert exc_info.value.max_age_seconds == 3600
+
+    def test_usdy_fresh_returns_price(self, w3):
+        FIXED_NOW = 1_750_000_000
+        FRESH_TS = FIXED_NOW - 30
+        price_raw = 1_02 * 10**16
+        oracle_addr = "0x96F6eF951840721AdBF46Ac996b59E0235CB985C"
+        mock_contract = MagicMock()
+        mock_contract.functions.getPriceData.return_value.call.return_value = (price_raw, FRESH_TS)
+        w3.eth.contract.return_value = mock_contract
+
+        adapter = OndoAdapter(w3)
+        with patch("rwa_sdk.core.oracle.time") as mock_time:
+            mock_time.time.return_value = float(FIXED_NOW)
+            price = adapter._read_usdy_price(oracle_addr)
+        assert price == price_raw / 10**18
 
 
 # ---------------------------------------------------------------------------

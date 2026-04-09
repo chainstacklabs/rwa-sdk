@@ -3,6 +3,7 @@
 from web3 import Web3
 
 from rwa_sdk.core.abi import combined_abi, load_abi
+from rwa_sdk.core.oracle import assert_price_fresh
 from rwa_sdk.core.models import (
     ComplianceCheck,
     ComplianceMethod,
@@ -46,7 +47,7 @@ class OndoAdapter:
             decimals=meta["decimals"],
             total_supply=meta["total_supply"],
             price=price,
-            price_source="RWADynamicOracle.getPrice()",
+            price_source="RWADynamicOracle.getPriceData()",
             tvl=tvl,
             yield_type=YieldType.ACCUMULATING,
             protocol="ondo",
@@ -62,8 +63,9 @@ class OndoAdapter:
             address=Web3.to_checksum_address(oracle_address),
             abi=load_abi("ondo_oracle"),
         )
-        raw = contract.functions.getPrice().call()
-        return raw / 10**18
+        price_raw, updated_at = contract.functions.getPriceData().call()
+        assert_price_fresh(updated_at)
+        return price_raw / 10**18
 
     # --- OUSG ---
 
