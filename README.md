@@ -27,14 +27,14 @@ Requires Python 3.10+. Only two dependencies: `web3` and `pydantic`.
 ## Quick start
 
 ```python
-from rwa_sdk import RWA
+from rwa_sdk import RWAChain
 
-rwa = RWA(rpc_url="https://ethereum-mainnet.core.chainstack.com/YOUR_KEY")
+rwa = RWAChain(rpc_url="https://ethereum-mainnet.core.chainstack.com/YOUR_KEY")
 
 # Get token info with live price from on-chain oracle
-token = rwa.ondo.usdy()
+token = rwa.adapters.ondo.usdy()
 print(token.symbol)      # USDY
-print(token.price)       # 1.1279 (from RWADynamicOracle)
+print(token.price)       # 1.1290 (from RWADynamicOracle.getPriceData())
 print(token.tvl)         # 587132506.0
 print(token.yield_type)  # YieldType.ACCUMULATING
 ```
@@ -63,74 +63,127 @@ for t in rwa.all_tokens():
 Output:
 
 ```
-USDY         | ondo       |      $1.1279 | $587,132,506
-OUSG         | ondo       |    $114.7259 | $388,964,385
+USDY         | ondo       |      $1.1290 | $587,132,506
+OUSG         | ondo       |    $114.8500 | $388,964,385
 rUSDY        | ondo       |      $1.0000 | $13,800,855
 rOUSG        | ondo       |      $1.0000 | $0
-bIB01        | backed     |    $119.7900 | $5,429,698
+bIB01        | backed     |    $119.9600 | $5,429,698
 bCSPX        | backed     |          N/A | N/A
 bNVDA        | backed     |          N/A | N/A
 BUIDL        | securitize |      $1.0000 | $168,501,226
 BUIDL-I      | securitize |      $1.0000 | $767,225,232
-syrupUSDC    | maple      |      $1.1576 | $1,786,175,587
+syrupUSDC    | maple      |      $1.1590 | $1,786,175,587
 syrupUSDT    | maple      |      $1.1214 | $1,002,816,176
-JTRSY        | centrifuge |      $1.0984 | $1,090,331,446
+JTRSY        | centrifuge |      $1.0997 | $1,090,331,446
 ```
 
 ### Compliance checks
 
-Each protocol enforces transfer restrictions differently. The SDK normalizes them:
+Each protocol enforces transfer restrictions differently. The SDK normalizes them through a single `can_transfer()` call:
 
 ```python
-# Ondo — blocklist check
-check = rwa.ondo.can_transfer_usdy(sender, receiver)
+# Unified interface — works for any token by symbol
+check = rwa.can_transfer("USDY", sender, receiver)
 print(check.can_transfer)          # True/False
+print(check.method)                # ComplianceMethod.BLOCKLIST
 print(check.restriction_message)   # "sender is on the blocklist"
+print(check.blocking_party)        # "sender" | "receiver" | None
 
-# Securitize/BUIDL — DS Protocol pre-transfer check
-check = rwa.securitize.pre_transfer_check(sender, receiver, amount)
-print(check.restriction_code)      # 0 = allowed
-print(check.restriction_message)   # human-readable reason
-
-# Backed — Chainalysis sanctions only
-check = rwa.backed.can_transfer(sender, receiver)
-
-# Centrifuge — ERC-1404 transfer restriction
-check = rwa.centrifuge.check_transfer_restriction(sender, receiver, amount)
+# Or call the adapter directly with a token address
+check = rwa.adapters.ondo.can_transfer(token_address, sender, receiver)
+check = rwa.adapters.securitize.can_transfer(token_address, sender, receiver, amount)
+check = rwa.adapters.backed.can_transfer(token_address, sender, receiver)
+check = rwa.adapters.centrifuge.can_transfer(token_address, sender, receiver, amount)
 ```
+
+Compliance methods per protocol:
+
+| Protocol | Method | Model |
+|---|---|---|
+| Ondo USDY/rUSDY | Blocklist | `ComplianceMethod.BLOCKLIST` |
+| Ondo OUSG/rOUSG | KYC registry | `ComplianceMethod.KYC_REGISTRY` |
+| Backed | Chainalysis sanctions | `ComplianceMethod.SANCTIONS` |
+| Maple syrupUSDC | PoolPermissionManager bitmap | `ComplianceMethod.BITMAP` |
+| Maple syrupUSDT | Permissionless | `ComplianceMethod.NONE` |
+| Securitize BUIDL | DS Protocol preTransferCheck | `ComplianceMethod.PRE_TRANSFER_CHECK` |
+| Centrifuge JTRSY | ERC-1404 restriction | `ComplianceMethod.TRANSFER_RESTRICTION` |
 
 ### ERC-4626 vault details (Maple)
 
 ```python
 # Pool-level data
-pool = rwa.maple.pool_info("syrup_usdc")
+pool = rwa.adapters.maple.pool_info("syrup_usdc")
 print(pool.total_assets)   # TVL in USDC
 print(pool.share_price)    # gross share price
 print(pool.utilization)    # 0.9999
 
 # Gross vs net share price
-print(rwa.maple.share_price())  # before unrealized losses
-print(rwa.maple.exit_price())   # after unrealized losses
+print(rwa.adapters.maple.share_price())  # before unrealized losses
+print(rwa.adapters.maple.exit_price())   # after unrealized losses
 ```
 
 ### BUIDL holder data
 
 ```python
-count = rwa.securitize.wallet_count()
-print(f"{count} BUIDL holders")
-
-# Enumerate holders by index
-for i in range(min(count, 10)):
-    print(rwa.securitize.get_wallet_at(i))
+# Returns all registered wallet addresses
+wallets = rwa.adapters.securitize.list_wallets("buidl")
+print(f"{len(wallets)} BUIDL holders")
+for addr in wallets[:10]:
+    print(addr)
 ```
 
 ### Direct price reads
 
 ```python
-rwa.ondo.usdy_price()     # 1.1279 (from RWADynamicOracle)
-rwa.ondo.ousg_price()     # 114.7259 (from OndoOracle)
-rwa.maple.share_price()   # 1.1576 (from convertToAssets)
+rwa.adapters.ondo.usdy_price()    # 1.1290 (from RWADynamicOracle.getPriceData())
+rwa.adapters.ondo.ousg_price()    # 114.85 (from OndoOracle.getAssetPrice())
+rwa.adapters.maple.share_price()  # 1.1590 (from convertToAssets())
 ```
+
+### Balance query
+
+```python
+balance = rwa.balance_of("USDY", "0xYourWallet")
+print(balance)  # float, human-readable (raw / 10^decimals)
+```
+
+### Multi-chain
+
+One instance per chain. Securitize BUIDL is deployed on Ethereum, Arbitrum, Polygon, and Avalanche:
+
+```python
+from rwa_sdk import RWAChain
+
+eth = RWAChain(rpc_url="https://ethereum-rpc.publicnode.com")
+arb = RWAChain(rpc_url="https://arbitrum-one-rpc.publicnode.com")
+
+eth_tokens = eth.all_tokens()   # all 12 tokens
+arb_tokens = arb.all_tokens()   # BUIDL on Arbitrum only
+
+print(eth.chain_id)    # 1
+print(arb.chain_id)    # 42161
+print(eth.chain_name)  # Ethereum
+```
+
+### Custom adapters
+
+```python
+from rwa_sdk.protocols.base import ProtocolAdapter
+
+class MyAdapter:
+    protocol = "my_protocol"
+    chain_id = 1
+
+    def all_tokens(self): ...
+    def can_transfer(self, token_address, from_addr, to_addr, value=0): ...
+
+# Inject at construction or register after
+rwa = RWAChain(rpc_url="...", adapters=[MyAdapter()])
+# or
+rwa.register_adapter(MyAdapter())
+```
+
+Adapters are validated against the `ProtocolAdapter` protocol at injection time. Missing `chain_id`, `all_tokens`, or `can_transfer` raises `TypeError` immediately.
 
 ## How it works
 
@@ -147,21 +200,6 @@ The SDK ships JSON ABIs for every contract it reads. No runtime Etherscan fetchi
 | ERC-4626 vault | Share price accrues via `convertToAssets()` | Maple, Centrifuge |
 | Dividend mint | Flat $1 NAV, new tokens minted as yield | BUIDL |
 
-### RPC provider
-
-Ships pre-configured for [Chainstack](https://chainstack.com) but works with any Ethereum RPC:
-
-```python
-# Chainstack (default)
-rwa = RWA(rpc_url="https://ethereum-mainnet.core.chainstack.com/YOUR_KEY")
-
-# Any RPC
-rwa = RWA(rpc_url="https://your-rpc-endpoint")
-
-# Access the underlying Web3 instance
-rwa.w3.eth.block_number
-```
-
 ## Data models
 
 All return types are Pydantic models:
@@ -177,11 +215,11 @@ token.chain_id       # int (1 = Ethereum)
 token.decimals       # int
 token.total_supply   # float
 token.price          # float | None
-token.price_source   # str | None (e.g. "RWADynamicOracle.getPrice()")
+token.price_source   # str | None (e.g. "RWADynamicOracle.getPriceData()")
 token.tvl            # float | None
 token.yield_type     # YieldType enum
 token.protocol       # str
-token.category       # str | None (e.g. "us-treasury", "private-credit")
+token.category       # Category | None (e.g. Category.US_TREASURY)
 ```
 
 ## License
