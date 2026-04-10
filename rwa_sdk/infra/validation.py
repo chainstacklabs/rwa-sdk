@@ -12,5 +12,5 @@ def checksum_address(addr: str, param: str = "address") -> str:
     """
     try:
         return Web3.to_checksum_address(addr)
-    except (ValueError, TypeError):
-        raise ValueError(f"Invalid EVM address for {param!r}: {addr!r}")
+    except (ValueError, TypeError) as err:
+        raise ValueError(f"Invalid EVM address for {param!r}: {addr!r}") from err
