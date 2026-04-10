@@ -32,7 +32,10 @@ def _make_adapter_mock(protocol_name: str, chain_id: int = 1) -> MagicMock:
 @pytest.fixture
 def rwa():
     """RWAChain instance with all adapters mocked to avoid real RPC calls."""
-    instances = {name: _make_adapter_mock(name) for name in ("ondo", "backed", "securitize", "maple", "centrifuge")}
+    instances = {
+        name: _make_adapter_mock(name)
+        for name in ("ondo", "backed", "securitize", "maple", "centrifuge")
+    }
     mock_registry = {name: MagicMock(return_value=inst) for name, inst in instances.items()}
 
     with (
@@ -54,6 +57,7 @@ class TestAdaptersNamespace:
             rwa = RWAChain(rpc_url="http://fake", adapters=[])
         with pytest.raises(RuntimeError, match="not available"):
             _ = rwa.adapters
+
 
 class TestChainId:
     def test_chain_id_returns_chain_id(self, rwa):
@@ -94,7 +98,7 @@ class TestAllTokens:
         rwa.adapters.ondo.all_tokens.return_value = [usdy]
         rwa.adapters.backed.all_tokens.side_effect = RuntimeError("oracle down")
 
-        import logging
+
         with patch("rwa_sdk.client._log") as mock_log:
             tokens = rwa.all_tokens()
 
@@ -114,6 +118,7 @@ class TestRegisterAdapter:
         tokens = rwa.all_tokens()
         assert any(t.symbol == "CUSTOM" for t in tokens)
 
+
 class TestInjectableAdapters:
     def test_injected_adapters_replace_defaults(self):
         mock_adapter = MagicMock(spec=ProtocolAdapter)
@@ -128,7 +133,10 @@ class TestInjectableAdapters:
         assert rwa._adapters[0].protocol == "custom"
 
     def test_default_adapters_instantiated_when_none_passed(self):
-        instances = {name: _make_adapter_mock(name) for name in ("ondo", "backed", "securitize", "maple", "centrifuge")}
+        instances = {
+            name: _make_adapter_mock(name)
+            for name in ("ondo", "backed", "securitize", "maple", "centrifuge")
+        }
         mock_registry = {name: MagicMock(return_value=inst) for name, inst in instances.items()}
 
         with (
@@ -184,6 +192,7 @@ class TestCanTransfer:
         usdy = _make_token("USDY", "0x96F6eF951840721AdBF46Ac996b59E0235CB985C", "ondo")
         rwa.adapters.ondo.all_tokens.return_value = [usdy]
         from rwa_sdk.core.models import ComplianceCheck, ComplianceMethod
+
         rwa.adapters.ondo.can_transfer.return_value = ComplianceCheck(
             can_transfer=True, method=ComplianceMethod.BLOCKLIST
         )
@@ -206,14 +215,21 @@ class TestCanTransfer:
         usdy = _make_token("USDY", "0x96F6eF951840721AdBF46Ac996b59E0235CB985C", "ondo")
         rwa.adapters.ondo.all_tokens.return_value = [usdy]
         from rwa_sdk.core.models import ComplianceCheck, ComplianceMethod
+
         rwa.adapters.ondo.can_transfer.return_value = ComplianceCheck(
             can_transfer=True, method=ComplianceMethod.BLOCKLIST
         )
-        result = rwa.can_transfer("usdy", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = rwa.can_transfer(
+            "usdy",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.can_transfer is True
 
     def test_raises_for_unknown_symbol(self, rwa):
         with pytest.raises(ValueError, match="Unknown token symbol"):
-            rwa.can_transfer("UNKNOWN", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
-
-
+            rwa.can_transfer(
+                "UNKNOWN",
+                "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+                "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+            )

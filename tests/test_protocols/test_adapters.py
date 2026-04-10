@@ -14,13 +14,16 @@ from rwa_sdk.protocols.ondo import OndoAdapter
 from rwa_sdk.protocols.securitize import SecuritizeAdapter
 
 
-@pytest.mark.parametrize("cls,expected_protocol", [
-    (BackedAdapter, "backed"),
-    (SecuritizeAdapter, "securitize"),
-    (OndoAdapter, "ondo"),
-    (MapleAdapter, "maple"),
-    (CentrifugeAdapter, "centrifuge"),
-])
+@pytest.mark.parametrize(
+    "cls,expected_protocol",
+    [
+        (BackedAdapter, "backed"),
+        (SecuritizeAdapter, "securitize"),
+        (OndoAdapter, "ondo"),
+        (MapleAdapter, "maple"),
+        (CentrifugeAdapter, "centrifuge"),
+    ],
+)
 def test_satisfies_protocol_adapter(mock_chain, cls, expected_protocol):
     adapter = cls(mock_chain)
     assert isinstance(adapter, ProtocolAdapter)
@@ -100,7 +103,13 @@ class TestBackedAdapter:
         mock_contract.functions.totalSupply.return_value.call.return_value = 1000 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "bIB01"
         mock_contract.functions.name.return_value.call.return_value = "Backed IB01"
-        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, 100 * 10**8, 0, FRESH_TS, 0)
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (
+            0,
+            100 * 10**8,
+            0,
+            FRESH_TS,
+            0,
+        )
         mock_chain.get_contract.return_value = mock_contract
         with patch("rwa_sdk.core.oracle.time") as mock_time:
             mock_time.time.return_value = float(FIXED_NOW)
@@ -115,7 +124,13 @@ class TestBackedAdapter:
         mock_contract.functions.totalSupply.return_value.call.return_value = 1000 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "bIB01"
         mock_contract.functions.name.return_value.call.return_value = "Backed IB01"
-        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, 100 * 10**8, 0, FRESH_TS, 0)
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (
+            0,
+            100 * 10**8,
+            0,
+            FRESH_TS,
+            0,
+        )
         mock_chain.get_contract.return_value = mock_contract
         with patch("rwa_sdk.core.oracle.time") as mock_time:
             mock_time.time.return_value = float(FIXED_NOW)
@@ -127,7 +142,13 @@ class TestBackedAdapter:
         FIXED_NOW = 1_750_000_000
         STALE_TS = FIXED_NOW - 7200
         mock_contract = MagicMock()
-        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, 100 * 10**8, 0, STALE_TS, 0)
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (
+            0,
+            100 * 10**8,
+            0,
+            STALE_TS,
+            0,
+        )
         mock_chain.get_contract.return_value = mock_contract
         adapter = BackedAdapter(mock_chain)
         with patch("rwa_sdk.core.oracle.time") as mock_time:
@@ -141,7 +162,13 @@ class TestBackedAdapter:
         FRESH_TS = FIXED_NOW - 30
         answer = 150 * 10**8
         mock_contract = MagicMock()
-        mock_contract.functions.latestRoundData.return_value.call.return_value = (0, answer, 0, FRESH_TS, 0)
+        mock_contract.functions.latestRoundData.return_value.call.return_value = (
+            0,
+            answer,
+            0,
+            FRESH_TS,
+            0,
+        )
         mock_chain.get_contract.return_value = mock_contract
         adapter = BackedAdapter(mock_chain)
         with patch("rwa_sdk.core.oracle.time") as mock_time:
@@ -168,7 +195,10 @@ class TestSecuritizeAdapter:
     def test_can_transfer_blocked(self, mock_chain):
         adapter = SecuritizeAdapter(mock_chain)
         mock_contract = MagicMock()
-        mock_contract.functions.preTransferCheck.return_value.call.return_value = (1, "not registered")
+        mock_contract.functions.preTransferCheck.return_value.call.return_value = (
+            1,
+            "not registered",
+        )
         mock_chain.get_contract.return_value = mock_contract
         result = adapter.can_transfer(
             "0x7712c34205737192402172409a8F7ccef8aA2AEc",
@@ -187,7 +217,9 @@ class TestSecuritizeAdapter:
             "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
         ]
         mock_contract.functions.walletCount.return_value.call.return_value = len(wallets)
-        mock_contract.functions.getWalletAt.side_effect = lambda i: MagicMock(call=MagicMock(return_value=wallets[i - 1]))
+        mock_contract.functions.getWalletAt.side_effect = lambda i: MagicMock(
+            call=MagicMock(return_value=wallets[i - 1])
+        )
         mock_chain.get_contract.return_value = mock_contract
 
         result = adapter.list_wallets()
@@ -214,7 +246,11 @@ class TestOndoAdapter:
         mock_contract.functions.isBlocked.return_value.call.return_value = False
         mock_chain.get_contract.return_value = mock_contract
         usdy_addr = "0x96F6eF951840721AdBF46Ac996b59E0235CB985C"
-        result = adapter.can_transfer(usdy_addr, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            usdy_addr,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert isinstance(result, ComplianceCheck)
         assert result.method == ComplianceMethod.BLOCKLIST
 
@@ -225,7 +261,11 @@ class TestOndoAdapter:
         mock_contract.functions.getKYCStatus.return_value.call.return_value = True
         mock_chain.get_contract.return_value = mock_contract
         ousg_addr = "0x1B19C19393e2d034D8Ff31ff34c81252FcBbee92"
-        result = adapter.can_transfer(ousg_addr, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            ousg_addr,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.method == ComplianceMethod.KYC_REGISTRY
 
     def test_can_transfer_usdy_blocked(self, mock_chain):
@@ -235,7 +275,11 @@ class TestOndoAdapter:
         mock_contract.functions.isBlocked.return_value.call.side_effect = [True, False]
         mock_chain.get_contract.return_value = mock_contract
         usdy_addr = "0x96F6eF951840721AdBF46Ac996b59E0235CB985C"
-        result = adapter.can_transfer(usdy_addr, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            usdy_addr,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.can_transfer is False
         assert "sender" in result.restriction_message
 
@@ -247,7 +291,10 @@ class TestOndoAdapter:
         mock_contract.functions.totalSupply.return_value.call.return_value = 1000 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "USDY"
         mock_contract.functions.name.return_value.call.return_value = "USDY"
-        mock_contract.functions.getPriceData.return_value.call.return_value = (1_02 * 10**16, FRESH_TS)
+        mock_contract.functions.getPriceData.return_value.call.return_value = (
+            1_02 * 10**16,
+            FRESH_TS,
+        )
         mock_contract.functions.getAssetPrice.return_value.call.return_value = 110 * 10**18
         mock_chain.get_contract.return_value = mock_contract
         with patch("rwa_sdk.core.oracle.time") as mock_time:
@@ -259,7 +306,10 @@ class TestOndoAdapter:
     def test_usdy_stale_raises(self, mock_chain):
         FIXED_NOW = 1_750_000_000
         mock_contract = MagicMock()
-        mock_contract.functions.getPriceData.return_value.call.return_value = (1_02 * 10**16, FIXED_NOW - 7200)
+        mock_contract.functions.getPriceData.return_value.call.return_value = (
+            1_02 * 10**16,
+            FIXED_NOW - 7200,
+        )
         mock_chain.get_contract.return_value = mock_contract
         adapter = OndoAdapter(mock_chain)
         with patch("rwa_sdk.core.oracle.time") as mock_time:
@@ -272,7 +322,10 @@ class TestOndoAdapter:
         FIXED_NOW = 1_750_000_000
         price_raw = 1_02 * 10**16
         mock_contract = MagicMock()
-        mock_contract.functions.getPriceData.return_value.call.return_value = (price_raw, FIXED_NOW - 30)
+        mock_contract.functions.getPriceData.return_value.call.return_value = (
+            price_raw,
+            FIXED_NOW - 30,
+        )
         mock_chain.get_contract.return_value = mock_contract
         adapter = OndoAdapter(mock_chain)
         with patch("rwa_sdk.core.oracle.time") as mock_time:
@@ -291,7 +344,11 @@ class TestMapleAdapter:
         mock_contract = MagicMock()
         mock_contract.functions.hasPermission.return_value.call.return_value = True
         mock_chain.get_contract.return_value = mock_contract
-        result = adapter.can_transfer(self.SYRUP_USDC_POOL, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            self.SYRUP_USDC_POOL,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.can_transfer is True
         assert result.method == ComplianceMethod.BITMAP
 
@@ -301,7 +358,11 @@ class TestMapleAdapter:
         mock_contract = MagicMock()
         mock_contract.functions.hasPermission.return_value.call.side_effect = [False, True]
         mock_chain.get_contract.return_value = mock_contract
-        result = adapter.can_transfer(self.SYRUP_USDC_POOL, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            self.SYRUP_USDC_POOL,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.can_transfer is False
         assert "sender" in result.restriction_message
         assert result.method == ComplianceMethod.BITMAP
@@ -312,7 +373,11 @@ class TestMapleAdapter:
         mock_contract = MagicMock()
         mock_contract.functions.hasPermission.return_value.call.side_effect = [True, False]
         mock_chain.get_contract.return_value = mock_contract
-        result = adapter.can_transfer(self.SYRUP_USDC_POOL, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            self.SYRUP_USDC_POOL,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.can_transfer is False
         assert "receiver" in result.restriction_message
         assert result.method == ComplianceMethod.BITMAP
@@ -320,14 +385,22 @@ class TestMapleAdapter:
     def test_can_transfer_none_when_no_pool_manager(self, mock_chain):
         mock_chain.checksum.side_effect = lambda x: x
         adapter = MapleAdapter(mock_chain)
-        result = adapter.can_transfer(self.SYRUP_USDT_POOL, "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            self.SYRUP_USDT_POOL,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.can_transfer is True
         assert result.method == ComplianceMethod.NONE
 
     def test_can_transfer_none_for_unknown_token(self, mock_chain):
         mock_chain.checksum.side_effect = lambda x: x
         adapter = MapleAdapter(mock_chain)
-        result = adapter.can_transfer("0x000000000000000000000000000000000000dEaD", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B")
+        result = adapter.can_transfer(
+            "0x000000000000000000000000000000000000dEaD",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
         assert result.can_transfer is True
         assert result.method == ComplianceMethod.NONE
 
@@ -357,7 +430,12 @@ class TestCentrifugeAdapter:
         mock_contract = MagicMock()
         mock_contract.functions.detectTransferRestriction.return_value.call.return_value = 0
         mock_chain.get_contract.return_value = mock_contract
-        result = adapter.can_transfer("0x8c213ee79581ff4984583c6a801e5263418c4b86", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B", 100)
+        result = adapter.can_transfer(
+            "0x8c213ee79581ff4984583c6a801e5263418c4b86",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+            100,
+        )
         assert result.can_transfer is True
         assert result.method == ComplianceMethod.TRANSFER_RESTRICTION
 
@@ -366,9 +444,16 @@ class TestCentrifugeAdapter:
         adapter = CentrifugeAdapter(mock_chain)
         mock_contract = MagicMock()
         mock_contract.functions.detectTransferRestriction.return_value.call.return_value = 1
-        mock_contract.functions.messageForTransferRestriction.return_value.call.return_value = "not member"
+        mock_contract.functions.messageForTransferRestriction.return_value.call.return_value = (
+            "not member"
+        )
         mock_chain.get_contract.return_value = mock_contract
-        result = adapter.can_transfer("0x8c213ee79581ff4984583c6a801e5263418c4b86", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B", 100)
+        result = adapter.can_transfer(
+            "0x8c213ee79581ff4984583c6a801e5263418c4b86",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+            100,
+        )
         assert result.can_transfer is False
         assert result.restriction_message == "not member"
 
@@ -376,10 +461,17 @@ class TestCentrifugeAdapter:
         mock_chain.checksum.side_effect = lambda x: x
         adapter = CentrifugeAdapter(mock_chain)
         mock_contract = MagicMock()
-        mock_contract.functions.detectTransferRestriction.return_value.call.side_effect = RuntimeError("connection refused")
+        mock_contract.functions.detectTransferRestriction.return_value.call.side_effect = (
+            RuntimeError("connection refused")
+        )
         mock_chain.get_contract.return_value = mock_contract
         with pytest.raises(RuntimeError, match="connection refused"):
-            adapter.can_transfer("0x8c213ee79581ff4984583c6a801e5263418c4b86", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B", 100)
+            adapter.can_transfer(
+                "0x8c213ee79581ff4984583c6a801e5263418c4b86",
+                "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+                "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+                100,
+            )
 
     def test_graphql_uses_injected_http(self, mock_chain):
         stub_http = MagicMock()
@@ -391,7 +483,9 @@ class TestCentrifugeAdapter:
     def test_injectable_api_url(self, mock_chain):
         stub_http = MagicMock()
         stub_http.post_json.return_value = {"data": {"tokens": {"items": []}}}
-        adapter = CentrifugeAdapter(mock_chain, http=stub_http, api_url="https://staging.centrifuge.io")
+        adapter = CentrifugeAdapter(
+            mock_chain, http=stub_http, api_url="https://staging.centrifuge.io"
+        )
         adapter._fetch_pool_token_data("JTRSY")
         assert stub_http.post_json.call_args[0][0] == "https://staging.centrifuge.io"
 
@@ -400,7 +494,9 @@ class TestCentrifugeAdapter:
         mock_contract.functions.decimals.return_value.call.return_value = 18
         mock_contract.functions.totalSupply.return_value.call.return_value = 500 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "JTRSY"
-        mock_contract.functions.name.return_value.call.return_value = "Janus Henderson Anemoy Treasury Fund"
+        mock_contract.functions.name.return_value.call.return_value = (
+            "Janus Henderson Anemoy Treasury Fund"
+        )
         mock_chain.get_contract.return_value = mock_contract
         stub_http = MagicMock()
         stub_http.post_json.return_value = {"data": {"tokens": {"items": []}}}
@@ -414,7 +510,9 @@ class TestCentrifugeAdapter:
         mock_contract.functions.decimals.return_value.call.return_value = 18
         mock_contract.functions.totalSupply.return_value.call.return_value = 500 * 10**18
         mock_contract.functions.symbol.return_value.call.return_value = "JTRSY"
-        mock_contract.functions.name.return_value.call.return_value = "Janus Henderson Anemoy Treasury Fund"
+        mock_contract.functions.name.return_value.call.return_value = (
+            "Janus Henderson Anemoy Treasury Fund"
+        )
         mock_chain.get_contract.return_value = mock_contract
         stub_http = MagicMock()
         stub_http.post_json.side_effect = RuntimeError("connection refused")
@@ -478,5 +576,6 @@ class TestAdaptersNamespace:
 class TestCategoryExport:
     def test_category_importable_from_top_level(self):
         from rwa_sdk import Category
+
         assert Category.US_TREASURY is not None
         assert Category.PRIVATE_CREDIT is not None

@@ -4,7 +4,6 @@ import logging
 from dataclasses import dataclass
 from typing import ClassVar
 
-from rwa_sdk.infra.abi import combined_abi, load_abi
 from rwa_sdk.core.chain import Chain
 from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.models import (
@@ -15,6 +14,7 @@ from rwa_sdk.core.models import (
     TokenInfo,
     YieldType,
 )
+from rwa_sdk.infra.abi import combined_abi, load_abi
 from rwa_sdk.infra.evm import EVMChainService
 from rwa_sdk.protocols.base import register
 from rwa_sdk.standards.erc20 import read_balance
@@ -75,8 +75,8 @@ class MapleAdapter:
         self._chain_id = chain.chain_id
         try:
             self._config = MapleAdapter.config[Chain(self._chain_id)]
-        except (KeyError, ValueError):
-            raise RegistryError(f"Maple is not deployed on chain {self._chain_id}")
+        except (KeyError, ValueError) as err:
+            raise RegistryError(f"Maple is not deployed on chain {self._chain_id}") from err
 
     @property
     def chain_id(self) -> int:
@@ -164,7 +164,9 @@ class MapleAdapter:
             )
             return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
 
-        contract = self._chain.get_contract(pm_contract_addr, load_abi("maple_pool_permission_manager"))
+        contract = self._chain.get_contract(
+            pm_contract_addr, load_abi("maple_pool_permission_manager")
+        )
         checksum_pm = self._chain.checksum(pool_manager_addr)
         sender_ok = contract.functions.hasPermission(
             checksum_pm, self._chain.checksum(from_addr), _LEND_FUNCTION_ID

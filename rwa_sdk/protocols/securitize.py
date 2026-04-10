@@ -33,19 +33,47 @@ class SecuritizeAdapter:
     protocol = "securitize"
 
     config: ClassVar[dict[Chain, SecuritizeConfig]] = {
-        Chain.ETHEREUM: SecuritizeConfig(tokens={
-            "buidl": SecuritizeToken(token="0x7712c34205737192402172409a8F7ccef8aA2AEc", name="BlackRock BUIDL", category=Category.US_TREASURY),
-            "buidl_i": SecuritizeToken(token="0x6a9DA2D710BB9B700acde7Cb81F10F1fF8C89041", name="BlackRock BUIDL-I", category=Category.US_TREASURY),
-        }),
-        Chain.ARBITRUM: SecuritizeConfig(tokens={
-            "buidl": SecuritizeToken(token="0xA6525Ae43eDCd03dC08E775774dCAbd3bb925872", name="BlackRock BUIDL", category=Category.US_TREASURY),
-        }),
-        Chain.AVALANCHE: SecuritizeConfig(tokens={
-            "buidl": SecuritizeToken(token="0x53FC82f14F009009b440a706e31c9021E1196A2F", name="BlackRock BUIDL", category=Category.US_TREASURY),
-        }),
-        Chain.POLYGON: SecuritizeConfig(tokens={
-            "buidl": SecuritizeToken(token="0x2893Ef551B6dD69F661Ac00F11D93E5Dc5Dc0e99", name="BlackRock BUIDL", category=Category.US_TREASURY),
-        }),
+        Chain.ETHEREUM: SecuritizeConfig(
+            tokens={
+                "buidl": SecuritizeToken(
+                    token="0x7712c34205737192402172409a8F7ccef8aA2AEc",
+                    name="BlackRock BUIDL",
+                    category=Category.US_TREASURY,
+                ),
+                "buidl_i": SecuritizeToken(
+                    token="0x6a9DA2D710BB9B700acde7Cb81F10F1fF8C89041",
+                    name="BlackRock BUIDL-I",
+                    category=Category.US_TREASURY,
+                ),
+            }
+        ),
+        Chain.ARBITRUM: SecuritizeConfig(
+            tokens={
+                "buidl": SecuritizeToken(
+                    token="0xA6525Ae43eDCd03dC08E775774dCAbd3bb925872",
+                    name="BlackRock BUIDL",
+                    category=Category.US_TREASURY,
+                ),
+            }
+        ),
+        Chain.AVALANCHE: SecuritizeConfig(
+            tokens={
+                "buidl": SecuritizeToken(
+                    token="0x53FC82f14F009009b440a706e31c9021E1196A2F",
+                    name="BlackRock BUIDL",
+                    category=Category.US_TREASURY,
+                ),
+            }
+        ),
+        Chain.POLYGON: SecuritizeConfig(
+            tokens={
+                "buidl": SecuritizeToken(
+                    token="0x2893Ef551B6dD69F661Ac00F11D93E5Dc5Dc0e99",
+                    name="BlackRock BUIDL",
+                    category=Category.US_TREASURY,
+                ),
+            }
+        ),
     }
 
     def __init__(self, chain: EVMChainService):
@@ -53,8 +81,8 @@ class SecuritizeAdapter:
         self._chain_id = chain.chain_id
         try:
             self._config = SecuritizeAdapter.config[Chain(self._chain_id)]
-        except (KeyError, ValueError):
-            raise RegistryError(f"Securitize is not deployed on chain {self._chain_id}")
+        except (KeyError, ValueError) as err:
+            raise RegistryError(f"Securitize is not deployed on chain {self._chain_id}") from err
 
     @property
     def chain_id(self) -> int:
@@ -74,7 +102,9 @@ class SecuritizeAdapter:
         count = contract.functions.walletCount().call()
         return [contract.functions.getWalletAt(i).call() for i in range(1, count + 1)]
 
-    def can_transfer(self, token_address: str, from_addr: str, to_addr: str, value: int = 0) -> ComplianceCheck:
+    def can_transfer(
+        self, token_address: str, from_addr: str, to_addr: str, value: int = 0
+    ) -> ComplianceCheck:
         """Check transfer eligibility via the DS Protocol preTransferCheck."""
         try:
             token_key = self._resolve_token_key(token_address)
@@ -82,7 +112,9 @@ class SecuritizeAdapter:
             return ComplianceCheck(can_transfer=True, method=ComplianceMethod.NONE)
         return self._pre_transfer_check(from_addr, to_addr, value, token_key)
 
-    def _pre_transfer_check(self, from_addr: str, to_addr: str, value: int, token_key: str = "buidl") -> ComplianceCheck:
+    def _pre_transfer_check(
+        self, from_addr: str, to_addr: str, value: int, token_key: str = "buidl"
+    ) -> ComplianceCheck:
         contract = self._get_contract(token_key)
         code, reason = contract.functions.preTransferCheck(
             self._chain.checksum(from_addr),

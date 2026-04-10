@@ -4,11 +4,8 @@ import logging
 from dataclasses import dataclass
 from typing import ClassVar
 
-from rwa_sdk.infra.abi import combined_abi, load_abi
 from rwa_sdk.core.chain import Chain
 from rwa_sdk.core.exceptions import RegistryError
-from rwa_sdk.infra.evm import EVMChainService
-from rwa_sdk.infra.http import DefaultHttpClient, HttpClient
 from rwa_sdk.core.models import (
     Category,
     ComplianceCheck,
@@ -16,6 +13,9 @@ from rwa_sdk.core.models import (
     TokenInfo,
     YieldType,
 )
+from rwa_sdk.infra.abi import combined_abi, load_abi
+from rwa_sdk.infra.evm import EVMChainService
+from rwa_sdk.infra.http import DefaultHttpClient, HttpClient
 from rwa_sdk.protocols.base import register
 
 _log = logging.getLogger(__name__)
@@ -69,8 +69,8 @@ class CentrifugeAdapter:
         self._chain_id = chain.chain_id
         try:
             self._config = CentrifugeAdapter.config[Chain(self._chain_id)]
-        except (KeyError, ValueError):
-            raise RegistryError(f"Centrifuge is not deployed on chain {self._chain_id}")
+        except (KeyError, ValueError) as err:
+            raise RegistryError(f"Centrifuge is not deployed on chain {self._chain_id}") from err
         self._http = http or DefaultHttpClient()
         self._api_url = api_url
 
@@ -96,7 +96,9 @@ class CentrifugeAdapter:
         self, from_addr: str, to_addr: str, value: int, token_key: str = "jtrsy"
     ) -> ComplianceCheck:
         token = self._config.tokens[token_key]
-        contract = self._chain.get_contract(token.token, combined_abi("erc20", "centrifuge_tranche"))
+        contract = self._chain.get_contract(
+            token.token, combined_abi("erc20", "centrifuge_tranche")
+        )
 
         code = contract.functions.detectTransferRestriction(
             self._chain.checksum(from_addr),

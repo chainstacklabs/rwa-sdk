@@ -65,8 +65,8 @@ class BackedAdapter:
         self._chain_id = chain.chain_id
         try:
             self._config = BackedAdapter.config[Chain(self._chain_id)]
-        except (KeyError, ValueError):
-            raise RegistryError(f"Backed is not deployed on chain {self._chain_id}")
+        except (KeyError, ValueError) as err:
+            raise RegistryError(f"Backed is not deployed on chain {self._chain_id}") from err
 
     @property
     def chain_id(self) -> int:
@@ -90,7 +90,9 @@ class BackedAdapter:
         price = None
         price_source = None
         if token.chainlink_feed and token.feed_decimals is not None:
-            price = self._read_chainlink_price(token.chainlink_feed, token.feed_decimals, token.feed_max_age_seconds)
+            price = self._read_chainlink_price(
+                token.chainlink_feed, token.feed_decimals, token.feed_max_age_seconds
+            )
             price_source = "Chainlink latestRoundData()"
         else:
             _log.debug("No Chainlink feed configured for %s, price unavailable", token_key)
@@ -110,20 +112,26 @@ class BackedAdapter:
             category=token.category,
         )
 
-    def _read_chainlink_price(self, feed_address: str, decimals: int, max_age_seconds: int = 3600) -> float:
+    def _read_chainlink_price(
+        self, feed_address: str, decimals: int, max_age_seconds: int = 3600
+    ) -> float:
         contract = self._chain.get_contract(feed_address, load_abi("chainlink_aggregator"))
         result = contract.functions.latestRoundData().call()
         answer = result[1]
         updated_at = result[3]
         assert_price_fresh(updated_at, max_age_seconds)
         price = answer / (10**decimals)
-        _log.debug("Chainlink price fetched for %s: %.6f (updated_at=%d)", feed_address, price, updated_at)
+        _log.debug(
+            "Chainlink price fetched for %s: %.6f (updated_at=%d)", feed_address, price, updated_at
+        )
         return price
 
     def _is_sanctioned(self, address: str) -> bool:
         if not self._config.sanctions_list:
             return False
-        contract = self._chain.get_contract(self._config.sanctions_list, load_abi("chainalysis_sanctions"))
+        contract = self._chain.get_contract(
+            self._config.sanctions_list, load_abi("chainalysis_sanctions")
+        )
         return contract.functions.isSanctioned(self._chain.checksum(address)).call()
 
     def can_transfer(

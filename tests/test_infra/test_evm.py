@@ -1,10 +1,11 @@
 """Tests for infra.evm — EVMChainService."""
+
 from unittest.mock import MagicMock
-import pytest
 
 
 def test_default_evm_chain_service_reads_chain_id():
     from rwa_sdk.infra.evm import DefaultEVMChainService
+
     mock_w3 = MagicMock()
     mock_w3.eth.chain_id = 1
     svc = DefaultEVMChainService(mock_w3)
@@ -13,6 +14,7 @@ def test_default_evm_chain_service_reads_chain_id():
 
 def test_default_evm_chain_service_get_contract_checksums_address():
     from rwa_sdk.infra.evm import DefaultEVMChainService
+
     mock_w3 = MagicMock()
     mock_w3.eth.chain_id = 1
     svc = DefaultEVMChainService(mock_w3)
@@ -29,6 +31,7 @@ def test_default_evm_chain_service_get_contract_checksums_address():
 
 def test_default_evm_chain_service_checksum_returns_eip55():
     from rwa_sdk.infra.evm import DefaultEVMChainService
+
     mock_w3 = MagicMock()
     mock_w3.eth.chain_id = 1
     svc = DefaultEVMChainService(mock_w3)
@@ -38,6 +41,7 @@ def test_default_evm_chain_service_checksum_returns_eip55():
 
 def test_evm_chain_service_satisfies_protocol():
     from rwa_sdk.infra.evm import DefaultEVMChainService, EVMChainService
+
     mock_w3 = MagicMock()
     mock_w3.eth.chain_id = 1
     svc = DefaultEVMChainService(mock_w3)

@@ -4,7 +4,6 @@ import logging
 from dataclasses import dataclass
 from typing import ClassVar
 
-from rwa_sdk.infra.abi import combined_abi, load_abi
 from rwa_sdk.core.chain import Chain
 from rwa_sdk.core.exceptions import RegistryError
 from rwa_sdk.core.models import (
@@ -15,6 +14,7 @@ from rwa_sdk.core.models import (
     YieldType,
 )
 from rwa_sdk.core.oracle import assert_price_fresh
+from rwa_sdk.infra.abi import combined_abi, load_abi
 from rwa_sdk.infra.evm import EVMChainService
 from rwa_sdk.protocols.base import register
 from rwa_sdk.standards.erc20 import read_token_metadata
@@ -46,20 +46,22 @@ class OndoAdapter:
     _REBASING_KEYS: ClassVar[frozenset[str]] = frozenset({"rusdy", "rousg"})
 
     config: ClassVar[dict[Chain, OndoConfig]] = {
-        Chain.ETHEREUM: OndoConfig(tokens={
-            "usdy": OndoToken(
-                token="0x96F6eF951840721AdBF46Ac996b59E0235CB985C",
-                oracle="0xA0219AA5B31e65Bc920B5b6DFb8EdF0988121De0",
-                blocklist="0xd8c8174691d936E2C80114EC449037b13421B0a8",
-            ),
-            "rusdy": OndoToken(token="0xaf37c1167910ebC994e266949387d2c7C326b879"),
-            "ousg": OndoToken(
-                token="0x1B19C19393e2d034D8Ff31ff34c81252FcBbee92",
-                oracle="0x9Cad45a8BF0Ed41Ff33074449B357C7a1fAb4094",
-                kyc_registry="0xcf6958D69d535FD03BD6Df3F4fe6CDcd127D97df",
-            ),
-            "rousg": OndoToken(token="0x54043c656F0FAd0652D9Ae2603cDF347c5578d00"),
-        }),
+        Chain.ETHEREUM: OndoConfig(
+            tokens={
+                "usdy": OndoToken(
+                    token="0x96F6eF951840721AdBF46Ac996b59E0235CB985C",
+                    oracle="0xA0219AA5B31e65Bc920B5b6DFb8EdF0988121De0",
+                    blocklist="0xd8c8174691d936E2C80114EC449037b13421B0a8",
+                ),
+                "rusdy": OndoToken(token="0xaf37c1167910ebC994e266949387d2c7C326b879"),
+                "ousg": OndoToken(
+                    token="0x1B19C19393e2d034D8Ff31ff34c81252FcBbee92",
+                    oracle="0x9Cad45a8BF0Ed41Ff33074449B357C7a1fAb4094",
+                    kyc_registry="0xcf6958D69d535FD03BD6Df3F4fe6CDcd127D97df",
+                ),
+                "rousg": OndoToken(token="0x54043c656F0FAd0652D9Ae2603cDF347c5578d00"),
+            }
+        ),
     }
 
     def __init__(self, chain: EVMChainService):
@@ -67,8 +69,8 @@ class OndoAdapter:
         self._chain_id = chain.chain_id
         try:
             self._config = OndoAdapter.config[Chain(self._chain_id)]
-        except (KeyError, ValueError):
-            raise RegistryError(f"Ondo is not deployed on chain {self._chain_id}")
+        except (KeyError, ValueError) as err:
+            raise RegistryError(f"Ondo is not deployed on chain {self._chain_id}") from err
 
     @property
     def chain_id(self) -> int:
@@ -104,12 +106,8 @@ class OndoAdapter:
         """Get underlying shares for an rUSDY holder."""
         token = self._config.tokens["rusdy"]
         contract = self._chain.get_contract(token.token, combined_abi("erc20", "ondo_rebasing"))
-        shares = contract.functions.sharesOf(
-            self._chain.checksum(holder)
-        ).call()
-        balance = contract.functions.balanceOf(
-            self._chain.checksum(holder)
-        ).call()
+        shares = contract.functions.sharesOf(self._chain.checksum(holder)).call()
+        balance = contract.functions.balanceOf(self._chain.checksum(holder)).call()
         return {
             "shares": shares,
             "balance": balance / 10**18,
@@ -127,18 +125,18 @@ class OndoAdapter:
         tokens = self._config.tokens
 
         ousg_group = {
-            self._chain.checksum(tokens[k].token)
-            for k in ("ousg", "rousg")
-            if k in tokens
+            self._chain.checksum(tokens[k].token) for k in ("ousg", "rousg") if k in tokens
         }
         usdy_group = {
-            self._chain.checksum(tokens[k].token)
-            for k in ("usdy", "rusdy")
-            if k in tokens
+            self._chain.checksum(tokens[k].token) for k in ("usdy", "rusdy") if k in tokens
         }
 
         if checksum in ousg_group:
-            token_key = next(k for k in ("ousg", "rousg") if k in tokens and self._chain.checksum(tokens[k].token) == checksum)
+            token_key = next(
+                k
+                for k in ("ousg", "rousg")
+                if k in tokens and self._chain.checksum(tokens[k].token) == checksum
+            )
             return self._can_transfer_ousg(from_addr, to_addr, token_key)
 
         if checksum in usdy_group:
@@ -152,9 +150,7 @@ class OndoAdapter:
         if token.blocklist is None:
             raise RegistryError(f"No blocklist registered for 'usdy' on chain {self._chain_id}")
         contract = self._chain.get_contract(token.blocklist, load_abi("ondo_blocklist"))
-        return contract.functions.isBlocked(
-            self._chain.checksum(address)
-        ).call()
+        return contract.functions.isBlocked(self._chain.checksum(address)).call()
 
     def check_kyc(self, address: str, rwa_token: str | None = None) -> bool:
         """Check registration in the OndoIDRegistry for OUSG/rOUSG.
@@ -232,9 +228,7 @@ class OndoAdapter:
 
     def _read_ousg_price(self, oracle_address: str, token_address: str) -> float:
         contract = self._chain.get_contract(oracle_address, load_abi("ondo_ousg_oracle"))
-        raw = contract.functions.getAssetPrice(
-            self._chain.checksum(token_address)
-        ).call()
+        raw = contract.functions.getAssetPrice(self._chain.checksum(token_address)).call()
         price = raw / 10**18
         _log.debug("OUSG price fetched: %.6f", price)
         return price
@@ -260,7 +254,9 @@ class OndoAdapter:
             )
         return ComplianceCheck(can_transfer=True, method=ComplianceMethod.BLOCKLIST)
 
-    def _can_transfer_ousg(self, from_addr: str, to_addr: str, token_key: str = "ousg") -> ComplianceCheck:
+    def _can_transfer_ousg(
+        self, from_addr: str, to_addr: str, token_key: str = "ousg"
+    ) -> ComplianceCheck:
         rwa_token = self._config.tokens[token_key].token
         if not self.check_kyc(from_addr, rwa_token):
             _log.warning("OUSG transfer blocked (KYC): sender")

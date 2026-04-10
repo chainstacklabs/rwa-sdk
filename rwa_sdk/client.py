@@ -52,7 +52,9 @@ class RWAChain:
     def adapters(self) -> Adapters:
         """Typed namespace for direct access to each protocol adapter."""
         if self._ns is None:
-            raise RuntimeError("adapters namespace is not available when custom adapters are injected")
+            raise RuntimeError(
+                "adapters namespace is not available when custom adapters are injected"
+            )
         return self._ns
 
     @property

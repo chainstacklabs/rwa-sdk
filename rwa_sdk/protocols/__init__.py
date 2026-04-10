@@ -2,7 +2,7 @@
 
 from rwa_sdk.infra.evm import EVMChainService
 from rwa_sdk.protocols.backed import BackedAdapter
-from rwa_sdk.protocols.base import ProtocolAdapter, _REGISTRY
+from rwa_sdk.protocols.base import _REGISTRY, ProtocolAdapter
 from rwa_sdk.protocols.centrifuge import CentrifugeAdapter
 from rwa_sdk.protocols.maple import MapleAdapter
 from rwa_sdk.protocols.ondo import OndoAdapter
@@ -20,6 +20,7 @@ class Adapters:
 
     def __init__(self, chain: EVMChainService) -> None:
         from rwa_sdk.core.exceptions import RegistryError
+
         for name, cls in _REGISTRY.items():
             try:
                 setattr(self, name, cls(chain))
@@ -29,8 +30,7 @@ class Adapters:
     def __getattr__(self, name: str):
         if name in _REGISTRY:
             raise AttributeError(
-                f"Adapter '{name}' is not available on this chain — "
-                f"it may not be deployed here."
+                f"Adapter '{name}' is not available on this chain — it may not be deployed here."
             )
         raise AttributeError(name)
 

@@ -15,9 +15,7 @@ def assert_price_fresh(timestamp: int, max_age_seconds: int = 3600) -> None:
     """
     now = int(time.time())
     if timestamp > 1_000_000_000_000:
-        raise ValueError(
-            f"timestamp {timestamp} looks like milliseconds — pass seconds instead"
-        )
+        raise ValueError(f"timestamp {timestamp} looks like milliseconds — pass seconds instead")
     if timestamp > now:
         raise ValueError(f"timestamp {timestamp} is in the future (now={now})")
     age = now - timestamp
