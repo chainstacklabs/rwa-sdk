@@ -1,8 +1,19 @@
 """Pydantic models for normalized RWA data."""
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel
+
+
+class Category(str, Enum):
+    """Asset category vocabulary for RWA tokens."""
+
+    US_TREASURY = "us-treasury"
+    PRIVATE_CREDIT = "private-credit"
+    BOND_ETF = "bond-etf"
+    EQUITY_ETF = "equity-etf"
+    EQUITY = "equity"
 
 
 class YieldType(str, Enum):
@@ -40,7 +51,7 @@ class TokenInfo(BaseModel):
     tvl: float | None = None
     yield_type: YieldType
     protocol: str
-    category: str | None = None
+    category: Category | None = None
 
 
 class ComplianceCheck(BaseModel):
@@ -50,6 +61,7 @@ class ComplianceCheck(BaseModel):
     restriction_code: int = 0
     restriction_message: str = ""
     method: ComplianceMethod
+    blocking_party: Literal["sender", "receiver"] | None = None
 
 
 class PoolInfo(BaseModel):
@@ -61,5 +73,6 @@ class PoolInfo(BaseModel):
     asset: str  # Underlying asset address (e.g. USDC)
     total_assets: float
     share_price: float
+    exit_price: float | None = None
     utilization: float | None = None
     protocol: str

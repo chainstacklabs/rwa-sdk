@@ -4,6 +4,14 @@ from typing import Protocol, runtime_checkable
 
 from rwa_sdk.core.models import ComplianceCheck, TokenInfo
 
+_REGISTRY: dict[str, type] = {}
+
+
+def register(cls: type) -> type:
+    """Register an adapter class in the global adapter registry."""
+    _REGISTRY[cls.protocol] = cls  # type: ignore[attr-defined]
+    return cls
+
 
 @runtime_checkable
 class ProtocolAdapter(Protocol):
@@ -34,16 +42,5 @@ class ProtocolAdapter(Protocol):
         to_addr: str,
         value: int = 0,
     ) -> ComplianceCheck:
-        """Check whether a transfer is permitted under this protocol's compliance model.
-
-        Args:
-            token_address: Checksummed contract address of the token.
-            from_addr: Sender wallet address.
-            to_addr: Recipient wallet address.
-            value: Transfer amount in token base units (wei). Some protocols
-                require this for amount-gated compliance checks.
-
-        Returns:
-            ComplianceCheck with can_transfer=True if permitted.
-        """
+        """Check whether a transfer is permitted under this protocol's compliance model."""
         ...

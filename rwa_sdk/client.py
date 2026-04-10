@@ -1,85 +1,95 @@
-"""Top-level RWA client — unified entry point."""
+"""Top-level RWAChain client — unified entry point."""
 
-from web3 import Web3
+import logging
 
-from rwa_sdk.core.models import TokenInfo
-from rwa_sdk.core.provider import create_provider
-from rwa_sdk.protocols.backed import BackedAdapter
+from rwa_sdk.core.chain import chain_name as _chain_name
+from rwa_sdk.core.models import ComplianceCheck, TokenInfo
+from rwa_sdk.infra.evm import DefaultEVMChainService
+from rwa_sdk.infra.provider import create_rpc_provider
+from rwa_sdk.infra.validation import checksum_address
+from rwa_sdk.protocols import Adapters
 from rwa_sdk.protocols.base import ProtocolAdapter
-from rwa_sdk.protocols.centrifuge import CentrifugeAdapter
-from rwa_sdk.protocols.maple import MapleAdapter
-from rwa_sdk.protocols.ondo import OndoAdapter
-from rwa_sdk.protocols.securitize import SecuritizeAdapter
 from rwa_sdk.standards import erc20
 
+_log = logging.getLogger(__name__)
 
-class RWA:
-    """Read-only SDK for querying RWA tokens across EVM chains.
+
+class RWAChain:
+    """Read-only SDK for querying RWAChain tokens across EVM chains.
 
     Usage:
-        rwa = RWA(rpc_url="https://nd-xxx.chainstack.com/xxx")
-        token = rwa.ondo.all_tokens()[0]
-        print(token.price, token.tvl)
+        rwa = RWAChain(rpc_url="https://nd-xxx.chainstack.com/xxx")
+        tokens = rwa.all_tokens()
         balance = rwa.balance_of("USDY", "0xYourWallet")
+
+        # Multi-chain: one instance per chain RPC
+        eth = RWAChain(rpc_url="https://eth-rpc...")
+        arb = RWAChain(rpc_url="https://arb-rpc...")
+        all_tokens = eth.all_tokens() + arb.all_tokens()
     """
 
     def __init__(
         self,
-        rpc_url: str | None = None,
-        chain_id: int = 1,
+        rpc_url: str,
         adapters: list[ProtocolAdapter] | None = None,
     ):
-        self._w3 = create_provider(rpc_url)
-        self._chain_id = chain_id
-        self._adapters: list[ProtocolAdapter] = adapters if adapters is not None else [
-            OndoAdapter(self._w3, chain_id),
-            BackedAdapter(self._w3, chain_id),
-            SecuritizeAdapter(self._w3, chain_id),
-            MapleAdapter(self._w3, chain_id),
-            CentrifugeAdapter(self._w3, chain_id),
-        ]
-
-    # --- Named accessors ---
-
-    @property
-    def ondo(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("ondo")
-
-    @property
-    def backed(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("backed")
+        w3 = create_rpc_provider(rpc_url)
+        self._chain = DefaultEVMChainService(w3)
+        if adapters is not None:
+            for a in adapters:
+                if not isinstance(a, ProtocolAdapter):
+                    raise TypeError(
+                        f"{a!r} does not satisfy ProtocolAdapter — "
+                        "must implement protocol, chain_id, all_tokens(), and can_transfer()"
+                    )
+            self._adapters: list[ProtocolAdapter] = list(adapters)
+            self._ns: Adapters | None = None
+        else:
+            self._ns = Adapters(self._chain)
+            self._adapters = self._ns._as_list()
 
     @property
-    def securitize(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("securitize")
+    def adapters(self) -> Adapters:
+        """Typed namespace for direct access to each protocol adapter."""
+        if self._ns is None:
+            raise RuntimeError(
+                "adapters namespace is not available when custom adapters are injected"
+            )
+        return self._ns
 
     @property
-    def maple(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("maple")
+    def chain_id(self) -> int:
+        """EVM chain ID for the connected network (e.g. 1 for Ethereum, 42161 for Arbitrum)."""
+        return self._chain.chain_id
 
     @property
-    def centrifuge(self) -> ProtocolAdapter:
-        return self._adapter_by_protocol("centrifuge")
+    def chain_name(self) -> str:
+        """Human-readable name for the connected chain."""
+        return _chain_name(self._chain.chain_id)
 
     @property
-    def w3(self) -> Web3:
-        """Access the underlying Web3 instance."""
-        return self._w3
+    def loaded_protocols(self) -> list[str]:
+        """Protocol names successfully loaded for this chain."""
+        return [adapter.protocol for adapter in self._adapters]
 
-    # --- Public API ---
+    def register_adapter(self, adapter: ProtocolAdapter) -> None:
+        """Register a custom protocol adapter."""
+        if not isinstance(adapter, ProtocolAdapter):
+            raise TypeError(
+                f"{adapter!r} does not satisfy ProtocolAdapter — "
+                "must implement protocol, chain_id, all_tokens(), and can_transfer()"
+            )
+        self._adapters.append(adapter)
 
     def all_tokens(self) -> list[TokenInfo]:
         """Get info for all supported tokens across all registered adapters."""
         tokens: list[TokenInfo] = []
         for adapter in self._adapters:
-            tokens.extend(adapter.all_tokens())
+            try:
+                tokens.extend(adapter.all_tokens())
+            except Exception as e:
+                _log.warning("Skipping adapter %r: %s", adapter.protocol, e)
         return tokens
-
-    def register_adapter(self, adapter: ProtocolAdapter) -> None:
-        """Register a custom protocol adapter."""
-        if not isinstance(adapter, ProtocolAdapter):
-            raise TypeError(f"Expected ProtocolAdapter, got {type(adapter).__name__!r}")
-        self._adapters.append(adapter)
 
     def balance_of(self, symbol: str, wallet: str) -> float:
         """Get token balance for a wallet, identified by symbol.
@@ -92,27 +102,42 @@ class RWA:
             Human-readable float balance (raw amount divided by 10^decimals).
 
         Raises:
-            ValueError: If the symbol is not found across registered adapters.
-
-        Note:
-            Each call resolves the token address by querying all adapters. For
-            protocols with on-chain or HTTP lookups in all_tokens(), this incurs
-            one network round-trip per adapter per call.
+            ValueError: If the symbol is not found or wallet address is invalid.
         """
-        address = self._resolve_token_address(symbol)
-        return erc20.read_balance(self._w3, address, wallet)
+        checksum_address(wallet, "wallet")
+        token = self._resolve_token(symbol)
+        return erc20.read_balance(self._chain, token.address, wallet)
 
-    # --- Internal helpers ---
+    def can_transfer(
+        self, symbol: str, from_addr: str, to_addr: str, value: int = 0
+    ) -> ComplianceCheck:
+        """Check whether a transfer is permitted for a token, identified by symbol.
 
-    def _adapter_by_protocol(self, protocol: str) -> ProtocolAdapter:
+        Args:
+            symbol: Token symbol, e.g. "USDY". Case-insensitive.
+            from_addr: Sender address.
+            to_addr: Receiver address.
+            value: Transfer amount in raw units (optional, defaults to 0).
+
+        Returns:
+            ComplianceCheck with can_transfer and restriction details.
+
+        Raises:
+            ValueError: If the symbol is not found.
+        """
+        token = self._resolve_token(symbol)
+        adapter = self._adapter_for_protocol(token.protocol)
+        return adapter.can_transfer(token.address, from_addr, to_addr, value)
+
+    def _resolve_token(self, symbol: str) -> TokenInfo:
+        upper = symbol.upper()
+        for token in self.all_tokens():
+            if token.symbol.upper() == upper:
+                return token
+        raise ValueError(f"Unknown token symbol: {symbol!r}")
+
+    def _adapter_for_protocol(self, protocol: str) -> ProtocolAdapter:
         for adapter in self._adapters:
             if adapter.protocol == protocol:
                 return adapter
         raise ValueError(f"No adapter registered for protocol: {protocol!r}")
-
-    def _resolve_token_address(self, symbol: str) -> str:
-        upper = symbol.upper()
-        for token in self.all_tokens():
-            if token.symbol.upper() == upper:
-                return token.address
-        raise ValueError(f"Unknown token symbol: {symbol!r}")

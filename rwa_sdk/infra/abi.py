@@ -14,6 +14,7 @@ def load_abi(name: str) -> list:
     return json.loads(path.read_text())
 
 
+@lru_cache(maxsize=32)
 def combined_abi(*names: str) -> list:
     """Merge multiple ABIs into one (e.g. erc20 + protocol-specific)."""
     merged = []

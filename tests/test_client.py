@@ -1,10 +1,10 @@
-"""Tests for the refactored RWA client."""
+"""Tests for the RWAChain client."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from rwa_sdk.client import RWA
+from rwa_sdk.client import RWAChain
 from rwa_sdk.core.models import TokenInfo, YieldType
 from rwa_sdk.protocols.base import ProtocolAdapter
 
@@ -21,49 +21,60 @@ def _make_token(symbol: str, address: str, protocol: str) -> TokenInfo:
     )
 
 
+def _make_adapter_mock(protocol_name: str, chain_id: int = 1) -> MagicMock:
+    m = MagicMock(spec=ProtocolAdapter)
+    m.protocol = protocol_name
+    m.chain_id = chain_id
+    m.all_tokens.return_value = []
+    return m
+
+
 @pytest.fixture
 def rwa():
-    """RWA instance with all adapters mocked to avoid real RPC calls."""
+    """RWAChain instance with all adapters mocked to avoid real RPC calls."""
+    instances = {
+        name: _make_adapter_mock(name)
+        for name in ("ondo", "backed", "securitize", "maple", "centrifuge")
+    }
+    mock_registry = {name: MagicMock(return_value=inst) for name, inst in instances.items()}
+
     with (
-        patch("rwa_sdk.client.OndoAdapter") as MockOndo,
-        patch("rwa_sdk.client.BackedAdapter") as MockBacked,
-        patch("rwa_sdk.client.SecuritizeAdapter") as MockSecuritize,
-        patch("rwa_sdk.client.MapleAdapter") as MockMaple,
-        patch("rwa_sdk.client.CentrifugeAdapter") as MockCentrifuge,
-        patch("rwa_sdk.client.create_provider"),
+        patch("rwa_sdk.protocols._REGISTRY", mock_registry),
+        patch("rwa_sdk.client.create_rpc_provider") as mock_provider,
     ):
-        MockOndo.return_value.protocol = "ondo"
-        MockBacked.return_value.protocol = "backed"
-        MockSecuritize.return_value.protocol = "securitize"
-        MockMaple.return_value.protocol = "maple"
-        MockCentrifuge.return_value.protocol = "centrifuge"
-
-        for mock in (MockOndo, MockBacked, MockSecuritize, MockMaple, MockCentrifuge):
-            mock.return_value.all_tokens.return_value = []
-
-        yield RWA()
+        mock_provider.return_value.eth.chain_id = 1
+        yield RWAChain(rpc_url="http://fake")
 
 
-class TestBackwardsCompatProperties:
-    def test_ondo_property_returns_adapter(self, rwa):
-        adapter = rwa.ondo
-        assert adapter.protocol == "ondo"
+class TestAdaptersNamespace:
+    @pytest.mark.parametrize("name", ["ondo", "backed", "securitize", "maple", "centrifuge"])
+    def test_all_adapters_wired(self, rwa, name):
+        assert getattr(rwa.adapters, name).protocol == name
 
-    def test_backed_property_returns_adapter(self, rwa):
-        assert rwa.backed.protocol == "backed"
+    def test_adapters_raises_when_custom_adapters_injected(self):
+        with patch("rwa_sdk.client.create_rpc_provider") as mock_provider:
+            mock_provider.return_value.eth.chain_id = 1
+            rwa = RWAChain(rpc_url="http://fake", adapters=[])
+        with pytest.raises(RuntimeError, match="not available"):
+            _ = rwa.adapters
 
-    def test_securitize_property_returns_adapter(self, rwa):
-        assert rwa.securitize.protocol == "securitize"
 
-    def test_maple_property_returns_adapter(self, rwa):
-        assert rwa.maple.protocol == "maple"
+class TestChainId:
+    def test_chain_id_returns_chain_id(self, rwa):
+        assert rwa.chain_id == 1
 
-    def test_centrifuge_property_returns_adapter(self, rwa):
-        assert rwa.centrifuge.protocol == "centrifuge"
 
-    def test_adapter_by_protocol_raises_for_unknown_protocol(self, rwa):
-        with pytest.raises(ValueError, match="No adapter registered for protocol"):
-            rwa._adapter_by_protocol("nonexistent")
+class TestLoadedProtocols:
+    def test_loaded_protocols_returns_protocol_names(self, rwa):
+        assert set(rwa.loaded_protocols) == {"ondo", "backed", "securitize", "maple", "centrifuge"}
+
+    def test_loaded_protocols_reflects_injected_adapters(self):
+        adapter_a = _make_adapter_mock("proto_a")
+        adapter_b = _make_adapter_mock("proto_b")
+        with patch("rwa_sdk.client.create_rpc_provider") as mock_provider:
+            mock_provider.return_value.eth.chain_id = 42161
+            rwa = RWAChain(rpc_url="http://fake", adapters=[adapter_a, adapter_b])
+        assert rwa.loaded_protocols == ["proto_a", "proto_b"]
 
 
 class TestAllTokens:
@@ -71,8 +82,8 @@ class TestAllTokens:
         usdy = _make_token("USDY", "0xAAA", "ondo")
         bib01 = _make_token("bIB01", "0xBBB", "backed")
 
-        rwa.ondo.all_tokens.return_value = [usdy]
-        rwa.backed.all_tokens.return_value = [bib01]
+        rwa.adapters.ondo.all_tokens.return_value = [usdy]
+        rwa.adapters.backed.all_tokens.return_value = [bib01]
 
         tokens = rwa.all_tokens()
         assert len(tokens) == 2
@@ -82,17 +93,21 @@ class TestAllTokens:
     def test_all_tokens_returns_empty_when_adapters_have_none(self, rwa):
         assert rwa.all_tokens() == []
 
+    def test_all_tokens_returns_partial_results_when_one_adapter_raises(self, rwa):
+        usdy = _make_token("USDY", "0xAAA", "ondo")
+        rwa.adapters.ondo.all_tokens.return_value = [usdy]
+        rwa.adapters.backed.all_tokens.side_effect = RuntimeError("oracle down")
+
+
+        with patch("rwa_sdk.client._log") as mock_log:
+            tokens = rwa.all_tokens()
+
+        assert len(tokens) == 1
+        assert tokens[0].symbol == "USDY"
+        mock_log.warning.assert_called_once()
+
 
 class TestRegisterAdapter:
-    def test_register_adapter_adds_to_internal_list(self, rwa):
-        stub = MagicMock(spec=ProtocolAdapter)
-        stub.protocol = "custom"
-        stub.all_tokens.return_value = []
-
-        initial_count = len(rwa._adapters)
-        rwa.register_adapter(stub)
-        assert len(rwa._adapters) == initial_count + 1
-
     def test_register_adapter_accessible_via_all_tokens(self, rwa):
         custom_token = _make_token("CUSTOM", "0xCCC", "custom")
         stub = MagicMock(spec=ProtocolAdapter)
@@ -103,14 +118,6 @@ class TestRegisterAdapter:
         tokens = rwa.all_tokens()
         assert any(t.symbol == "CUSTOM" for t in tokens)
 
-    def test_registered_adapter_accessible_as_property_via_lookup(self, rwa):
-        stub = MagicMock(spec=ProtocolAdapter)
-        stub.protocol = "custom"
-        stub.all_tokens.return_value = []
-
-        rwa.register_adapter(stub)
-        assert rwa._adapter_by_protocol("custom") is stub
-
 
 class TestInjectableAdapters:
     def test_injected_adapters_replace_defaults(self):
@@ -118,30 +125,33 @@ class TestInjectableAdapters:
         mock_adapter.protocol = "custom"
         mock_adapter.all_tokens.return_value = []
 
-        with patch("rwa_sdk.client.create_provider"):
-            rwa = RWA(rpc_url="http://fake", adapters=[mock_adapter])
+        with patch("rwa_sdk.client.create_rpc_provider") as mock_provider:
+            mock_provider.return_value.eth.chain_id = 1
+            rwa = RWAChain(rpc_url="http://fake", adapters=[mock_adapter])
 
         assert len(rwa._adapters) == 1
         assert rwa._adapters[0].protocol == "custom"
 
     def test_default_adapters_instantiated_when_none_passed(self):
+        instances = {
+            name: _make_adapter_mock(name)
+            for name in ("ondo", "backed", "securitize", "maple", "centrifuge")
+        }
+        mock_registry = {name: MagicMock(return_value=inst) for name, inst in instances.items()}
+
         with (
-            patch("rwa_sdk.client.OndoAdapter") as MockOndo,
-            patch("rwa_sdk.client.BackedAdapter") as MockBacked,
-            patch("rwa_sdk.client.SecuritizeAdapter") as MockSecuritize,
-            patch("rwa_sdk.client.MapleAdapter") as MockMaple,
-            patch("rwa_sdk.client.CentrifugeAdapter") as MockCentrifuge,
-            patch("rwa_sdk.client.create_provider"),
+            patch("rwa_sdk.protocols._REGISTRY", mock_registry),
+            patch("rwa_sdk.client.create_rpc_provider") as mock_provider,
         ):
-            for m in (MockOndo, MockBacked, MockSecuritize, MockMaple, MockCentrifuge):
-                m.return_value.all_tokens.return_value = []
-            rwa = RWA(rpc_url="http://fake")
+            mock_provider.return_value.eth.chain_id = 1
+            rwa = RWAChain(rpc_url="http://fake")
 
         assert len(rwa._adapters) == 5
 
     def test_empty_adapters_list_is_accepted(self):
-        with patch("rwa_sdk.client.create_provider"):
-            rwa = RWA(rpc_url="http://fake", adapters=[])
+        with patch("rwa_sdk.client.create_rpc_provider") as mock_provider:
+            mock_provider.return_value.eth.chain_id = 1
+            rwa = RWAChain(rpc_url="http://fake", adapters=[])
 
         assert rwa._adapters == []
 
@@ -149,27 +159,77 @@ class TestInjectableAdapters:
 class TestBalanceOf:
     def test_balance_of_resolves_symbol_and_delegates_to_erc20(self, rwa):
         usdy = _make_token("USDY", "0x96F6eF951840721AdBF46Ac996b59E0235CB985C", "ondo")
-        rwa.ondo.all_tokens.return_value = [usdy]
+        rwa.adapters.ondo.all_tokens.return_value = [usdy]
 
         with patch("rwa_sdk.client.erc20.read_balance", return_value=42.5) as mock_read:
-            result = rwa.balance_of("USDY", "0xWallet")
+            result = rwa.balance_of("USDY", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045")
 
         mock_read.assert_called_once_with(
-            rwa._w3,
+            rwa._chain,
             "0x96F6eF951840721AdBF46Ac996b59E0235CB985C",
-            "0xWallet",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
         )
         assert result == 42.5
 
     def test_balance_of_is_case_insensitive(self, rwa):
         usdy = _make_token("USDY", "0x96F6eF951840721AdBF46Ac996b59E0235CB985C", "ondo")
-        rwa.ondo.all_tokens.return_value = [usdy]
-
+        rwa.adapters.ondo.all_tokens.return_value = [usdy]
         with patch("rwa_sdk.client.erc20.read_balance", return_value=1.0):
-            result = rwa.balance_of("usdy", "0xWallet")
-
+            result = rwa.balance_of("usdy", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045")
         assert result == 1.0
 
     def test_balance_of_raises_for_unknown_symbol(self, rwa):
         with pytest.raises(ValueError, match="Unknown token symbol"):
-            rwa.balance_of("UNKNOWN", "0xWallet")
+            rwa.balance_of("UNKNOWN", "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045")
+
+    def test_balance_of_raises_for_invalid_wallet_address(self, rwa):
+        with pytest.raises(ValueError, match="Invalid EVM address"):
+            rwa.balance_of("USDY", "not-an-address")
+
+
+class TestCanTransfer:
+    def test_delegates_to_correct_adapter(self, rwa):
+        usdy = _make_token("USDY", "0x96F6eF951840721AdBF46Ac996b59E0235CB985C", "ondo")
+        rwa.adapters.ondo.all_tokens.return_value = [usdy]
+        from rwa_sdk.core.models import ComplianceCheck, ComplianceMethod
+
+        rwa.adapters.ondo.can_transfer.return_value = ComplianceCheck(
+            can_transfer=True, method=ComplianceMethod.BLOCKLIST
+        )
+
+        result = rwa.can_transfer(
+            "USDY",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+
+        rwa.adapters.ondo.can_transfer.assert_called_once_with(
+            "0x96F6eF951840721AdBF46Ac996b59E0235CB985C",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+            0,
+        )
+        assert result.can_transfer is True
+
+    def test_is_case_insensitive(self, rwa):
+        usdy = _make_token("USDY", "0x96F6eF951840721AdBF46Ac996b59E0235CB985C", "ondo")
+        rwa.adapters.ondo.all_tokens.return_value = [usdy]
+        from rwa_sdk.core.models import ComplianceCheck, ComplianceMethod
+
+        rwa.adapters.ondo.can_transfer.return_value = ComplianceCheck(
+            can_transfer=True, method=ComplianceMethod.BLOCKLIST
+        )
+        result = rwa.can_transfer(
+            "usdy",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.can_transfer is True
+
+    def test_raises_for_unknown_symbol(self, rwa):
+        with pytest.raises(ValueError, match="Unknown token symbol"):
+            rwa.can_transfer(
+                "UNKNOWN",
+                "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+                "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+            )
