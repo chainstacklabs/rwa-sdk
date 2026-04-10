@@ -20,7 +20,12 @@ class StubHttpClient:
         return self._response
 
     def post_json(
-        self, _url: str, _payload: dict[str, Any], *, timeout: int = 15
+        self,
+        _url: str,
+        _payload: dict[str, Any],
+        *,
+        headers: dict[str, str] | None = None,
+        timeout: int = 15,
     ) -> dict[str, Any]:
         return self._response
 
