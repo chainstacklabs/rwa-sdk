@@ -157,7 +157,7 @@ from rwa_sdk import RWAChain
 eth = RWAChain(rpc_url="https://ethereum-rpc.publicnode.com")
 arb = RWAChain(rpc_url="https://arbitrum-one-rpc.publicnode.com")
 
-eth_tokens = eth.all_tokens()   # all 12 tokens
+eth_tokens = eth.all_tokens()   # all supported tokens
 arb_tokens = arb.all_tokens()   # BUIDL on Arbitrum only
 
 print(eth.chain_id)    # 1
