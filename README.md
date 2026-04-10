@@ -90,9 +90,9 @@ print(check.restriction_message)   # "sender is on the blocklist"
 print(check.blocking_party)        # "sender" | "receiver" | None
 
 # Or call the adapter directly with a token address
-check = rwa.adapters.ondo.can_transfer(token_address, sender, receiver)
+check = rwa.adapters.ondo.can_transfer(token_address, sender, receiver)          # value ignored
 check = rwa.adapters.securitize.can_transfer(token_address, sender, receiver, amount)
-check = rwa.adapters.backed.can_transfer(token_address, sender, receiver)
+check = rwa.adapters.backed.can_transfer(token_address, sender, receiver)          # value ignored
 check = rwa.adapters.centrifuge.can_transfer(token_address, sender, receiver, amount)
 ```
 
@@ -183,7 +183,7 @@ rwa = RWAChain(rpc_url="...", adapters=[MyAdapter()])
 rwa.register_adapter(MyAdapter())
 ```
 
-Adapters are validated against the `ProtocolAdapter` protocol at injection time. Missing `chain_id`, `all_tokens`, or `can_transfer` raises `TypeError` immediately.
+Adapters are validated against the `ProtocolAdapter` protocol at injection time. Missing `protocol`, `chain_id`, `all_tokens`, or `can_transfer` raises `TypeError` immediately.
 
 ## How it works
 
