@@ -209,6 +209,37 @@ class TestSecuritizeAdapter:
         assert result.can_transfer is False
         assert result.restriction_code == 1
 
+    @pytest.mark.parametrize(
+        "reason,expected",
+        [
+            ("Sender wallet is not in the registry", "sender"),
+            ("From address blocked", "sender"),
+            ("Insufficient balance for sender", "sender"),
+            ("Receiver is not registered", "receiver"),
+            ("Recipient country not allowed", "receiver"),
+            ("To address restricted", "receiver"),
+            # Pool-level errors must NOT be tagged with a party — these were
+            # false-positives under naive substring matching ("to" in "Token",
+            # "to" in "investor").
+            ("Token paused", None),
+            ("Token paused, no transfers allowed", None),
+            ("Investor count exceeded", None),
+            ("Lock-up period not over", None),
+        ],
+    )
+    def test_blocking_party_uses_word_boundaries(self, mock_chain, reason, expected):
+        adapter = SecuritizeAdapter(mock_chain)
+        mock_contract = MagicMock()
+        mock_contract.functions.preTransferCheck.return_value.call.return_value = (1, reason)
+        mock_chain.get_contract.return_value = mock_contract
+        result = adapter.can_transfer(
+            "0x7712c34205737192402172409a8F7ccef8aA2AEc",
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+            1000,
+        )
+        assert result.blocking_party == expected, f"reason={reason!r}"
+
     def test_list_wallets(self, mock_chain):
         adapter = SecuritizeAdapter(mock_chain)
         mock_contract = MagicMock()
@@ -258,7 +289,11 @@ class TestOndoAdapter:
         mock_chain.checksum.side_effect = lambda x: x
         adapter = OndoAdapter(mock_chain)
         mock_contract = MagicMock()
-        mock_contract.functions.getKYCStatus.return_value.call.return_value = True
+        # Real contract method: getRegisteredID(rwaToken, user) -> bytes32.
+        # Non-zero = registered, zero bytes32 = unregistered.
+        mock_contract.functions.getRegisteredID.return_value.call.return_value = (
+            b"\x99" + b"\x00" * 31
+        )
         mock_chain.get_contract.return_value = mock_contract
         ousg_addr = "0x1B19C19393e2d034D8Ff31ff34c81252FcBbee92"
         result = adapter.can_transfer(
@@ -267,6 +302,61 @@ class TestOndoAdapter:
             "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
         )
         assert result.method == ComplianceMethod.KYC_REGISTRY
+        assert result.can_transfer is True
+
+    def test_can_transfer_ousg_blocks_unregistered_sender(self, mock_chain):
+        mock_chain.checksum.side_effect = lambda x: x
+        adapter = OndoAdapter(mock_chain)
+        mock_contract = MagicMock()
+        # Sender unregistered (bytes32(0)), receiver doesn't matter — should short-circuit
+        mock_contract.functions.getRegisteredID.return_value.call.side_effect = [
+            bytes(32),
+            b"\x99" + b"\x00" * 31,
+        ]
+        mock_chain.get_contract.return_value = mock_contract
+        ousg_addr = "0x1B19C19393e2d034D8Ff31ff34c81252FcBbee92"
+        result = adapter.can_transfer(
+            ousg_addr,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.can_transfer is False
+        assert result.method == ComplianceMethod.KYC_REGISTRY
+        assert result.blocking_party == "sender"
+        assert "sender" in result.restriction_message
+
+    def test_can_transfer_ousg_blocks_unregistered_receiver(self, mock_chain):
+        mock_chain.checksum.side_effect = lambda x: x
+        adapter = OndoAdapter(mock_chain)
+        mock_contract = MagicMock()
+        mock_contract.functions.getRegisteredID.return_value.call.side_effect = [
+            b"\x99" + b"\x00" * 31,
+            bytes(32),
+        ]
+        mock_chain.get_contract.return_value = mock_contract
+        ousg_addr = "0x1B19C19393e2d034D8Ff31ff34c81252FcBbee92"
+        result = adapter.can_transfer(
+            ousg_addr,
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9B",
+        )
+        assert result.can_transfer is False
+        assert result.blocking_party == "receiver"
+        assert "receiver" in result.restriction_message
+
+    def test_check_kyc_distinguishes_zero_bytes32_from_registered(self, mock_chain):
+        mock_chain.checksum.side_effect = lambda x: x
+        adapter = OndoAdapter(mock_chain)
+        mock_contract = MagicMock()
+        mock_chain.get_contract.return_value = mock_contract
+
+        mock_contract.functions.getRegisteredID.return_value.call.return_value = bytes(32)
+        assert adapter.check_kyc("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045") is False
+
+        mock_contract.functions.getRegisteredID.return_value.call.return_value = (
+            b"\xab" * 32
+        )
+        assert adapter.check_kyc("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045") is True
 
     def test_can_transfer_usdy_blocked(self, mock_chain):
         mock_chain.checksum.side_effect = lambda x: x
@@ -332,6 +422,48 @@ class TestOndoAdapter:
             mock_time.time.return_value = float(FIXED_NOW)
             price = adapter._read_usdy_price("0x96F6eF951840721AdBF46Ac996b59E0235CB985C")
         assert price == price_raw / 10**18
+
+    def test_usdy_price_public(self, mock_chain):
+        FIXED_NOW = 1_750_000_000
+        mock_contract = MagicMock()
+        mock_contract.functions.getPriceData.return_value.call.return_value = (
+            int(1.129 * 10**18),
+            FIXED_NOW - 30,
+        )
+        mock_chain.get_contract.return_value = mock_contract
+        with patch("rwa_sdk.core.oracle.time") as mock_time:
+            mock_time.time.return_value = float(FIXED_NOW)
+            assert OndoAdapter(mock_chain).usdy_price() == pytest.approx(1.129)
+
+    def test_ousg_price_public(self, mock_chain):
+        mock_chain.checksum.side_effect = lambda x: x
+        mock_contract = MagicMock()
+        mock_contract.functions.getAssetPrice.return_value.call.return_value = int(
+            114.85 * 10**18
+        )
+        mock_chain.get_contract.return_value = mock_contract
+        assert OndoAdapter(mock_chain).ousg_price() == pytest.approx(114.85)
+
+    def test_rusdy_shares_returns_shares_and_balance(self, mock_chain):
+        mock_chain.checksum.side_effect = lambda x: x
+        mock_contract = MagicMock()
+        mock_contract.functions.sharesOf.return_value.call.return_value = 5 * 10**18
+        mock_contract.functions.balanceOf.return_value.call.return_value = int(5.13 * 10**18)
+        mock_chain.get_contract.return_value = mock_contract
+
+        result = OndoAdapter(mock_chain).rusdy_shares(
+            "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+        )
+        assert result["shares"] == 5 * 10**18
+        assert result["balance"] == pytest.approx(5.13)
+
+    def test_init_raises_registry_error_on_unsupported_chain(self):
+        chain = MagicMock()
+        chain.chain_id = 137  # Polygon — Ondo not deployed
+        from rwa_sdk.core.exceptions import RegistryError
+
+        with pytest.raises(RegistryError, match="not deployed on chain 137"):
+            OndoAdapter(chain)
 
 
 class TestMapleAdapter:
@@ -421,6 +553,65 @@ class TestMapleAdapter:
         tokens = MapleAdapter(mock_chain).all_tokens()
         assert len(tokens) == 2
         assert all(t.protocol == "maple" for t in tokens)
+
+    def test_share_price_reflects_convert_to_assets(self, mock_chain):
+        mock_contract = MagicMock()
+        mock_contract.functions.decimals.return_value.call.return_value = 6
+        mock_contract.functions.convertToAssets.return_value.call.return_value = 1_159_000
+        mock_chain.get_contract.return_value = mock_contract
+        assert MapleAdapter(mock_chain).share_price("syrup_usdc") == 1.159
+
+    def test_exit_price_reflects_convert_to_exit_assets(self, mock_chain):
+        mock_contract = MagicMock()
+        mock_contract.functions.decimals.return_value.call.return_value = 6
+        mock_contract.functions.convertToExitAssets.return_value.call.return_value = 1_158_000
+        mock_chain.get_contract.return_value = mock_contract
+        assert MapleAdapter(mock_chain).exit_price("syrup_usdc") == 1.158
+
+    def test_pool_info_populates_all_fields(self, mock_chain):
+        mock_chain.checksum.side_effect = lambda x: x
+        usdc = "0xa0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        pool_contract = MagicMock()
+        pool_contract.functions.decimals.return_value.call.return_value = 6
+        pool_contract.functions.totalAssets.return_value.call.return_value = 1_000_000 * 10**6
+        pool_contract.functions.convertToAssets.return_value.call.return_value = 1_159_000
+        pool_contract.functions.convertToExitAssets.return_value.call.return_value = 1_158_000
+        pool_contract.functions.asset.return_value.call.return_value = usdc
+
+        # read_balance() loads its own contract for the underlying USDC
+        usdc_contract = MagicMock()
+        usdc_contract.functions.decimals.return_value.call.return_value = 6
+        usdc_contract.functions.balanceOf.return_value.call.return_value = 1_000 * 10**6  # 1k idle
+
+        # First get_contract call → pool, second → underlying USDC
+        mock_chain.get_contract.side_effect = [pool_contract, usdc_contract]
+
+        info = MapleAdapter(mock_chain).pool_info("syrup_usdc")
+        assert info.total_assets == 1_000_000.0
+        assert info.share_price == 1.159
+        assert info.exit_price == 1.158
+        assert info.asset == usdc
+        assert info.utilization == pytest.approx(0.999, rel=1e-3)  # (1M - 1k) / 1M
+        assert info.protocol == "maple"
+
+    def test_pool_info_utilization_zero_when_empty(self, mock_chain):
+        mock_chain.checksum.side_effect = lambda x: x
+        pool_contract = MagicMock()
+        pool_contract.functions.decimals.return_value.call.return_value = 6
+        pool_contract.functions.totalAssets.return_value.call.return_value = 0
+        pool_contract.functions.convertToAssets.return_value.call.return_value = 1 * 10**6
+        pool_contract.functions.convertToExitAssets.return_value.call.return_value = 1 * 10**6
+        pool_contract.functions.asset.return_value.call.return_value = (
+            "0xa0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        )
+
+        usdc_contract = MagicMock()
+        usdc_contract.functions.decimals.return_value.call.return_value = 6
+        usdc_contract.functions.balanceOf.return_value.call.return_value = 0
+        mock_chain.get_contract.side_effect = [pool_contract, usdc_contract]
+
+        info = MapleAdapter(mock_chain).pool_info("syrup_usdc")
+        assert info.utilization == 0
 
 
 class TestCentrifugeAdapter:
@@ -534,7 +725,9 @@ class TestOndoComplianceRouting:
         chain = self._make_chain()
         adapter = OndoAdapter(chain)
         kyc_contract = MagicMock()
-        kyc_contract.functions.getKYCStatus.return_value.call.return_value = True
+        kyc_contract.functions.getRegisteredID.return_value.call.return_value = (
+            b"\x99" + b"\x00" * 31
+        )
         chain.get_contract.return_value = kyc_contract
 
         rousg_addr = "0x54043c656f0fad0652d9ae2603cdf347c5578d00"  # rOUSG on Ethereum (lowercased)
