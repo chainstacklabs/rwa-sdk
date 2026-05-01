@@ -221,7 +221,7 @@ class MapleAdapter:
 
     def _price_from_contract(self, contract, fn_name: str) -> float:
         one_share = 10 ** contract.functions.decimals().call()
-        return contract.functions[fn_name](one_share).call() / one_share
+        return getattr(contract.functions, fn_name)(one_share).call() / one_share
 
     def _get_pool_contract(self, address: str):
         return self._chain.get_contract(address, combined_abi("erc20", "erc4626", "maple_pool"))

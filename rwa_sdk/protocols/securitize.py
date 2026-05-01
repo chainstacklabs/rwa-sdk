@@ -1,6 +1,7 @@
 """Securitize adapter — BlackRock BUIDL."""
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import ClassVar
 
@@ -12,6 +13,9 @@ from rwa_sdk.infra.evm import EVMChainService
 from rwa_sdk.protocols.base import register
 
 _log = logging.getLogger(__name__)
+
+_SENDER_KEYWORDS = re.compile(r"\b(sender|from)\b")
+_RECEIVER_KEYWORDS = re.compile(r"\b(receiver|recipient|to)\b")
 
 
 @dataclass(frozen=True)
@@ -125,9 +129,9 @@ class SecuritizeAdapter:
         blocking_party = None
         if code != 0:
             lower = reason.lower()
-            if "sender" in lower or "from" in lower:
+            if _SENDER_KEYWORDS.search(lower):
                 blocking_party = "sender"
-            elif "receiver" in lower or "recipient" in lower or "to" in lower:
+            elif _RECEIVER_KEYWORDS.search(lower):
                 blocking_party = "receiver"
         return ComplianceCheck(
             can_transfer=(code == 0),

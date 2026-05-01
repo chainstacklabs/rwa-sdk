@@ -8,13 +8,19 @@ ABI_DIR = Path(__file__).parent.parent / "abis"
 
 
 @lru_cache(maxsize=32)
+def _abi_text(name: str) -> str:
+    return (ABI_DIR / f"{name}.json").read_text()
+
+
 def load_abi(name: str) -> list:
-    """Load an ABI by name (without .json extension)."""
-    path = ABI_DIR / f"{name}.json"
-    return json.loads(path.read_text())
+    """Load an ABI by name (without .json extension).
+
+    Returns a fresh list each call so callers may mutate without poisoning
+    other consumers.
+    """
+    return json.loads(_abi_text(name))
 
 
-@lru_cache(maxsize=32)
 def combined_abi(*names: str) -> list:
     """Merge multiple ABIs into one (e.g. erc20 + protocol-specific)."""
     merged = []
