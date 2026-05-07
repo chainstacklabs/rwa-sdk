@@ -1,6 +1,6 @@
 # rwa-sdk
 
-Read-only Python SDK for querying Real World Asset (RWA) tokens across EVM chains.
+Read-only Python SDK for querying Real World Asset (RWA) tokens across EVM chains (through your trusted RPC provider, see [Chainstack](https://chainstack.com/)).
 
 One interface for token metadata, price/NAV, TVL, and transfer compliance across Ondo, BlackRock BUIDL, Backed, Maple, and Centrifuge — the protocols that make up the majority of on-chain RWA value.
 
