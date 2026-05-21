@@ -1,0 +1,3 @@
+[
+  {"inputs": [{"name": "user", "type": "address"}, {"name": "target", "type": "address"}, {"name": "functionSig", "type": "bytes4"}], "name": "canCall", "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view", "type": "function"}
+]

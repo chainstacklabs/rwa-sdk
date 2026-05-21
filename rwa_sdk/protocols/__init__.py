@@ -4,6 +4,7 @@ from rwa_sdk.infra.evm import EVMChainService
 from rwa_sdk.protocols.backed import BackedAdapter
 from rwa_sdk.protocols.base import _REGISTRY, ProtocolAdapter
 from rwa_sdk.protocols.centrifuge import CentrifugeAdapter
+from rwa_sdk.protocols.hashnote import HashnoteAdapter
 from rwa_sdk.protocols.maple import MapleAdapter
 from rwa_sdk.protocols.ondo import OndoAdapter
 from rwa_sdk.protocols.securitize import SecuritizeAdapter
@@ -19,6 +20,7 @@ class Adapters:
     maple: MapleAdapter
     centrifuge: CentrifugeAdapter
     superstate: SuperstateAdapter
+    hashnote: HashnoteAdapter
 
     def __init__(self, chain: EVMChainService) -> None:
         from rwa_sdk.core.exceptions import RegistryError
