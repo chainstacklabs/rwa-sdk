@@ -1,0 +1,3 @@
+[
+  {"inputs": [{"name": "addr", "type": "address"}, {"name": "fundSymbol", "type": "string"}], "name": "isAddressAllowedForPrivateInstrument", "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view", "type": "function"}
+]

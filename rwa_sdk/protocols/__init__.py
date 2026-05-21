@@ -7,6 +7,7 @@ from rwa_sdk.protocols.centrifuge import CentrifugeAdapter
 from rwa_sdk.protocols.maple import MapleAdapter
 from rwa_sdk.protocols.ondo import OndoAdapter
 from rwa_sdk.protocols.securitize import SecuritizeAdapter
+from rwa_sdk.protocols.superstate import SuperstateAdapter
 
 
 class Adapters:
@@ -17,6 +18,7 @@ class Adapters:
     securitize: SecuritizeAdapter
     maple: MapleAdapter
     centrifuge: CentrifugeAdapter
+    superstate: SuperstateAdapter
 
     def __init__(self, chain: EVMChainService) -> None:
         from rwa_sdk.core.exceptions import RegistryError
