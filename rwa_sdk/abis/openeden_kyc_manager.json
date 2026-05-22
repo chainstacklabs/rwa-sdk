@@ -1,0 +1,4 @@
+[
+  {"inputs": [{"name": "addr", "type": "address"}], "name": "isKyc", "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view", "type": "function"},
+  {"inputs": [{"name": "addr", "type": "address"}], "name": "isBanned", "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view", "type": "function"}
+]
